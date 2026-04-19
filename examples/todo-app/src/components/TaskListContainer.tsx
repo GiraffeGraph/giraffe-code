@@ -3,9 +3,10 @@ import type { Todo } from "../types/todo";
 interface TaskListContainerProps {
   todos: Todo[];
   onToggle: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
-export function TaskListContainer({ todos, onToggle }: TaskListContainerProps) {
+export function TaskListContainer({ todos, onToggle, onDelete }: TaskListContainerProps) {
   return (
     <section className="task-list-container" aria-live="polite">
       <header className="task-list-container__header">
@@ -18,15 +19,39 @@ export function TaskListContainer({ todos, onToggle }: TaskListContainerProps) {
       ) : (
         <ul className="task-list-container__list">
           {todos.map((todo) => (
-            <li className="task-list-container__item" key={todo.id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={todo.status === "completed"}
-                  onChange={() => onToggle(todo.id)}
-                />
-                <span data-status={todo.status}>{todo.title}</span>
-              </label>
+            <li
+              className={`task-list-container__item ${todo.status === "completed" ? "is-completed" : ""}`}
+              key={todo.id}
+            >
+              <div className="task-list-container__item-row">
+                <label className="task-list-container__item-label">
+                  <input
+                    type="checkbox"
+                    checked={todo.status === "completed"}
+                    onChange={() => onToggle(todo.id)}
+                  />
+                  <span className="task-list-container__title" data-status={todo.status}>
+                    {todo.title}
+                  </span>
+                  {todo.status === "completed" ? (
+                    <span className="task-list-container__status-chip">Done</span>
+                  ) : null}
+                </label>
+
+                <div className="task-list-container__item-actions">
+                  <span className={`task-list-container__priority task-list-container__priority--${todo.priority}`}>
+                    {todo.priority}
+                  </span>
+                  <button
+                    type="button"
+                    className="task-list-container__delete"
+                    onClick={() => onDelete(todo.id)}
+                    aria-label={`Delete task ${todo.title}`}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
             </li>
           ))}
         </ul>
