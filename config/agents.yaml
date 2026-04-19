@@ -1,0 +1,73 @@
+agents:
+  claude:
+    name: "Claude Code"
+    command: "claude"
+    args: []
+    handoff_system_prompt: |
+      When you complete your task, you MUST output EXACTLY this block as the very last thing you write:
+      [GIRAFFE_HANDOFF]
+      COMPLETED: <one-line summary of what you accomplished>
+      FILES: <comma-separated list of created/modified files, or "none">
+      CONTEXT: <key facts the next agent needs to know>
+      NEXT_HINT: <optional suggestion for what the next agent should focus on>
+      [/GIRAFFE_HANDOFF]
+    strengths:
+      - backend_code
+      - architecture
+      - refactoring
+      - complex_tasks
+    fallback: codex
+
+  codex:
+    name: "Codex CLI"
+    command: "codex"
+    args: []
+    handoff_system_prompt: |
+      When you complete your task, you MUST output EXACTLY this block as the very last thing you write:
+      [GIRAFFE_HANDOFF]
+      COMPLETED: <one-line summary of what you accomplished>
+      FILES: <comma-separated list of created/modified files, or "none">
+      CONTEXT: <key facts the next agent needs to know>
+      NEXT_HINT: <optional suggestion for what the next agent should focus on>
+      [/GIRAFFE_HANDOFF]
+    strengths:
+      - testing
+      - code_completion
+      - bug_fixing
+    fallback: claude
+
+  pi:
+    name: "Pi"
+    command: "pi"
+    args: []
+    handoff_system_prompt: |
+      When you complete your task, you MUST output EXACTLY this block as the very last thing you write:
+      [GIRAFFE_HANDOFF]
+      COMPLETED: <one-line summary of what you accomplished>
+      FILES: <comma-separated list of created/modified files, or "none">
+      CONTEXT: <key facts the next agent needs to know>
+      NEXT_HINT: <optional suggestion for what the next agent should focus on>
+      [/GIRAFFE_HANDOFF]
+    strengths:
+      - frontend
+      - ui_components
+      - styling
+    fallback: gemini
+
+  gemini:
+    name: "Gemini CLI"
+    command: "gemini"
+    args: []
+    handoff_system_prompt: |
+      When you complete your task, you MUST output EXACTLY this block as the very last thing you write:
+      [GIRAFFE_HANDOFF]
+      COMPLETED: <one-line summary of what you accomplished>
+      FILES: <comma-separated list of created/modified files, or "none">
+      CONTEXT: <key facts the next agent needs to know>
+      NEXT_HINT: <optional suggestion for what the next agent should focus on>
+      [/GIRAFFE_HANDOFF]
+    strengths:
+      - documentation
+      - summarization
+      - large_codebase_analysis
+    fallback: claude
