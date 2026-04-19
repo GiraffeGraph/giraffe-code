@@ -105,11 +105,15 @@ export abstract class AgentBase {
 
       if (!ptyWarningEmitted) {
         ptyWarningEmitted = true;
-        eventBus.emit(
-          "output",
-          `\n[AGENT_WARNING] node-pty is unavailable (${ptyDisabledReason}). ` +
-            `Using fallback process mode.\n`
-        );
+        // Keep fallback quiet in normal usage; this is expected on some systems.
+        // Opt-in debug visibility via env var.
+        if (process.env["GIRAFFE_DEBUG"] === "1") {
+          eventBus.emit(
+            "output",
+            `\n[AGENT_WARNING] node-pty is unavailable (${ptyDisabledReason}). ` +
+              `Using fallback process mode.\n`
+          );
+        }
       }
     }
   }
