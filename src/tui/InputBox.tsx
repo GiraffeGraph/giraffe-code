@@ -7,6 +7,7 @@ const SLASH_COMMANDS = [
   { cmd: "/model",  hint: "choose planner model" },
   { cmd: "/status", hint: "show auth & config status" },
   { cmd: "/doctor", hint: "run health checks" },
+  { cmd: "/native", hint: "launch real agent UI (e.g. /native claude build todo app)" },
 ];
 
 interface InputBoxProps {
@@ -19,8 +20,9 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
   const [value, setValue] = useState("");
 
   const isSlash = value.startsWith("/");
+  const slashToken = isSlash ? value.toLowerCase().trim().split(/\s+/)[0] ?? "" : "";
   const matches = isSlash
-    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(value.toLowerCase()))
+    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(slashToken))
     : [];
   const isError = lastStatus?.startsWith("Error:") || lastStatus?.includes("error") || lastStatus?.includes("→");
 
@@ -29,7 +31,16 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
       const trimmed = value.trim();
       if (!trimmed) return;
       if (trimmed.startsWith("/")) {
-        const exact = SLASH_COMMANDS.find((c) => c.cmd === trimmed.toLowerCase());
+        const lower = trimmed.toLowerCase();
+
+        // /native supports inline args: /native [agent] [task...]
+        if (lower === "/native" || lower.startsWith("/native ")) {
+          setValue("");
+          onCommand(trimmed);
+          return;
+        }
+
+        const exact = SLASH_COMMANDS.find((c) => c.cmd === lower);
         const match = exact ?? (matches.length === 1 ? matches[0] : undefined);
         if (match) {
           setValue("");
@@ -90,7 +101,7 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
               </Box>
             ))
           ) : (
-            <Text color="red">Unknown command. Available: /login /logout /model /status /doctor</Text>
+            <Text color="red">Unknown command. Available: /login /logout /model /status /doctor /native</Text>
           )}
         </Box>
       ) : (

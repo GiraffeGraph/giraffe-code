@@ -12,6 +12,7 @@ import { LogoutSelector } from "./LogoutSelector.js";
 import { DoctorScreen } from "./DoctorScreen.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
+import { runNativeAgentSession } from "../core/nativeMode.js";
 import type { TaskStep } from "../types/config.js";
 
 type AppScreen = "login" | "input" | "running" | "model" | "status" | "logout" | "doctor";
@@ -65,11 +66,53 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
   }, []);
 
   const handleCommand = useCallback((cmd: string) => {
-    if (cmd === "/login") setScreen("login");
-    else if (cmd === "/model") setScreen("model");
-    else if (cmd === "/status") setScreen("status");
-    else if (cmd === "/logout") setScreen("logout");
-    else if (cmd === "/doctor") setScreen("doctor");
+    if (cmd === "/login") {
+      setScreen("login");
+      return;
+    }
+
+    if (cmd === "/model") {
+      setScreen("model");
+      return;
+    }
+
+    if (cmd === "/status") {
+      setScreen("status");
+      return;
+    }
+
+    if (cmd === "/logout") {
+      setScreen("logout");
+      return;
+    }
+
+    if (cmd === "/doctor") {
+      setScreen("doctor");
+      return;
+    }
+
+    if (cmd === "/native" || cmd.startsWith("/native ")) {
+      const args = cmd.trim().split(/\s+/).slice(1);
+      setStatus("Launching native agent UI...");
+
+      try {
+        // Clear current Ink frame before handing terminal to agent UI.
+        process.stdout.write("\x1Bc");
+        const code = runNativeAgentSession(args);
+        setStatus(
+          code === 0
+            ? "Native session ended. Enter a task to begin"
+            : `Native session exited with code ${code}`
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setStatus(`Native mode error: ${message}`);
+      }
+
+      setCurrentAgent("—");
+      setStepInfo("");
+      setScreen("input");
+    }
   }, []);
 
   const returnToInput = useCallback(() => {

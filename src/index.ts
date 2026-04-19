@@ -7,6 +7,7 @@ import { ModelSelector } from "./tui/ModelSelector.js";
 import { StatusScreen } from "./tui/StatusScreen.js";
 import { LogoutSelector } from "./tui/LogoutSelector.js";
 import { DoctorScreen } from "./tui/DoctorScreen.js";
+import { runNativeAgentSession } from "./core/nativeMode.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -22,11 +23,11 @@ if (nodeMajor >= 25 && process.env["GIRAFFE_SUPPRESS_NODE_WARNING"] !== "1") {
   );
 }
 
-const COMMANDS = ["login", "model", "status", "logout", "doctor", "help"] as const;
+const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 
 let command: Command | undefined;
-let commandArg: string | undefined;   // e.g. provider for "giraffe logout anthropic"
+const commandArgs: string[] = [];
 let configOverride: string | undefined;
 const taskParts: string[] = [];
 
@@ -40,12 +41,14 @@ for (let i = 0; i < args.length; i++) {
     command = "help";
   } else if (!arg.startsWith("--")) {
     if (command) {
-      commandArg = arg;  // positional arg after a command (e.g. provider name)
+      commandArgs.push(arg);
     } else {
       taskParts.push(arg);
     }
   }
 }
+
+const commandArg = commandArgs[0];
 
 const task = taskParts.join(" ").trim();
 
@@ -65,6 +68,7 @@ Commands:
   giraffe model                  Choose the planner model
   giraffe status                 Show auth + config status
   giraffe doctor                 Run health checks (auth/config/agent CLIs)
+  giraffe native [agent] [task]  Launch real agent UI (1:1 terminal handover)
   giraffe help                   Show this help
 
 Flags:
@@ -77,6 +81,7 @@ Examples:
   giraffe logout anthropic
   giraffe status
   giraffe doctor
+  giraffe native claude "build a todo app"
 `);
   process.exit(0);
 }
@@ -176,6 +181,18 @@ if (command === "login") {
     })
   );
   process.on("SIGINT", () => { unmount(); process.exit(0); });
+
+// ── giraffe native [agent] [task] ────────────────────────────────────────────
+
+} else if (command === "native") {
+  try {
+    const code = runNativeAgentSession(commandArgs);
+    process.exit(code);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`\n[Giraffe Code] Native mode error:\n${message}\n\n`);
+    process.exit(1);
+  }
 
 // ── Normal run ────────────────────────────────────────────────────────────────
 
