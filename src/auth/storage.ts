@@ -74,6 +74,15 @@ export function hasAnyCredential(): boolean {
   return false;
 }
 
+export function removeCredential(providerId: string): boolean {
+  const storeKey = PROVIDER_STORE_KEY[providerId] ?? providerId;
+  const store = readAuthStore();
+  if (!(storeKey in store)) return false;
+  delete store[storeKey];
+  writeAuthStore(store);
+  return true;
+}
+
 // Resolve a shell-command credential (prefixed with "!")
 export function resolveShellCredential(key: string): string {
   if (!key.startsWith("!")) return key;

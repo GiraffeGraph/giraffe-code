@@ -3,29 +3,72 @@ import React from "react";
 import { render } from "ink";
 import { App } from "./tui/App.js";
 import { LoginSelector } from "./tui/LoginSelector.js";
+import { ModelSelector } from "./tui/ModelSelector.js";
+import { StatusScreen } from "./tui/StatusScreen.js";
+import { LogoutSelector } from "./tui/LogoutSelector.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
-import { hasAnyCredential } from "./auth/storage.js";
+import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
 // ── Parse CLI arguments ───────────────────────────────────────────────────────
 
 const args = process.argv.slice(2);
 
+const COMMANDS = ["login", "model", "status", "logout", "help"] as const;
+type Command = (typeof COMMANDS)[number];
+
+let command: Command | undefined;
+let commandArg: string | undefined;   // e.g. provider for "giraffe logout anthropic"
 let configOverride: string | undefined;
 const taskParts: string[] = [];
-let isLoginCommand = false;
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
-  if (arg === "login") {
-    isLoginCommand = true;
+  if (!command && COMMANDS.includes(arg as Command)) {
+    command = arg as Command;
   } else if (arg === "--config" && i + 1 < args.length) {
     configOverride = args[++i];
+  } else if (arg === "--help" || arg === "-h") {
+    command = "help";
   } else if (!arg.startsWith("--")) {
-    taskParts.push(arg);
+    if (command) {
+      commandArg = arg;  // positional arg after a command (e.g. provider name)
+    } else {
+      taskParts.push(arg);
+    }
   }
 }
 
 const task = taskParts.join(" ").trim();
+
+// ── Help ──────────────────────────────────────────────────────────────────────
+
+if (command === "help") {
+  process.stdout.write(`
+🦒 Giraffe Code — multi-agent AI orchestration
+
+Usage:
+  giraffe [task]                 Run agents on a task
+  giraffe                        Interactive mode (prompt for task)
+
+Commands:
+  giraffe login                  Authenticate with an LLM provider
+  giraffe logout [provider]      Remove saved credentials
+  giraffe model                  Choose the planner model
+  giraffe status                 Show auth + config status
+  giraffe help                   Show this help
+
+Flags:
+  --config <path>                Use a custom agents.yaml
+
+Examples:
+  giraffe "Add auth and write tests"
+  giraffe login
+  giraffe model
+  giraffe logout anthropic
+  giraffe status
+`);
+  process.exit(0);
+}
 
 // ── Apply overrides and validate config ───────────────────────────────────────
 
@@ -33,17 +76,20 @@ if (configOverride) {
   setConfigPath(configOverride);
 }
 
-try {
-  getConfig(); // Fail fast if agents.yaml is missing or malformed
-} catch (err) {
-  const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`\n[Giraffe Code] Config error:\n${message}\n\n`);
-  process.exit(1);
+if (command !== "status") {
+  // status reads config itself; others need it validated first
+  try {
+    getConfig();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`\n[Giraffe Code] Config error:\n${message}\n\n`);
+    process.exit(1);
+  }
 }
 
-// ── giraffe login — explicit re-authentication ────────────────────────────────
+// ── giraffe login ─────────────────────────────────────────────────────────────
 
-if (isLoginCommand) {
+if (command === "login") {
   const { unmount } = render(
     React.createElement(LoginSelector, {
       onComplete: (_providerId) => {
@@ -53,14 +99,63 @@ if (isLoginCommand) {
       },
     })
   );
+  process.on("SIGINT", () => { unmount(); process.exit(0); });
 
-  process.on("SIGINT", () => {
-    unmount();
+// ── giraffe logout [provider] ─────────────────────────────────────────────────
+
+} else if (command === "logout") {
+  if (commandArg) {
+    // Direct removal: giraffe logout anthropic
+    const removed = removeCredential(commandArg);
+    if (removed) {
+      process.stdout.write(`\nLogged out: ${commandArg}\n`);
+    } else {
+      process.stdout.write(`\nNo credentials found for: ${commandArg}\n`);
+    }
     process.exit(0);
-  });
+  } else {
+    // Interactive selector
+    const { unmount } = render(
+      React.createElement(LogoutSelector, {
+        onComplete: () => {
+          unmount();
+          process.exit(0);
+        },
+      })
+    );
+    process.on("SIGINT", () => { unmount(); process.exit(0); });
+  }
+
+// ── giraffe model ─────────────────────────────────────────────────────────────
+
+} else if (command === "model") {
+  const { unmount } = render(
+    React.createElement(ModelSelector, {
+      onComplete: () => {
+        unmount();
+        process.stdout.write("\nPlanner model saved to ~/.giraffe/config.json\n");
+        process.exit(0);
+      },
+    })
+  );
+  process.on("SIGINT", () => { unmount(); process.exit(0); });
+
+// ── giraffe status ────────────────────────────────────────────────────────────
+
+} else if (command === "status") {
+  const { unmount } = render(
+    React.createElement(StatusScreen, {
+      onDone: () => {
+        unmount();
+        process.exit(0);
+      },
+    })
+  );
+  process.on("SIGINT", () => { unmount(); process.exit(0); });
+
+// ── Normal run ────────────────────────────────────────────────────────────────
 
 } else {
-  // ── Normal run — check if login is needed first ──────────────────────────
   const needsLogin = !hasAnyCredential();
 
   const { unmount } = render(
@@ -69,9 +164,5 @@ if (isLoginCommand) {
       needsLogin,
     })
   );
-
-  process.on("SIGINT", () => {
-    unmount();
-    process.exit(0);
-  });
+  process.on("SIGINT", () => { unmount(); process.exit(0); });
 }

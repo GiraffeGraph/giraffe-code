@@ -1,4 +1,5 @@
 import { getConfig } from "../../config/loader.js";
+import { getUserConfig } from "../../config/userConfig.js";
 import { TaskStepSchema } from "../../types/config.js";
 import { z } from "zod";
 import { completeSimple } from "../../providers/complete.js";
@@ -18,6 +19,16 @@ async function resolvePlannerProvider(): Promise<{
   providerId: string;
   model: string;
 }> {
+  // User config (~/.giraffe/config.json) takes highest priority
+  const userConfig = getUserConfig();
+  if (userConfig.planner?.provider) {
+    return {
+      providerId: userConfig.planner.provider,
+      model: userConfig.planner.model ?? "",
+    };
+  }
+
+  // Project config (agents.yaml) is next
   const config = getConfig();
   const plannerConfig = config.planner;
 
