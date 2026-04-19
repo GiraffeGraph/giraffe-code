@@ -71,7 +71,12 @@ export async function runGraph(task: string): Promise<void> {
   };
 
   try {
-    await graph.invoke(initialState);
+    await graph.invoke(initialState, {
+      // Default LangGraph recursion limit (25) is too low for multi-step
+      // orchestration (router -> agent -> handoff loop). Increase it so
+      // normal plans don't fail with false-positive recursion errors.
+      recursionLimit: 200,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     eventBus.emit("error", message);

@@ -105,7 +105,8 @@ function buildPlannerContext(task: string, agentDescriptions: string): Context {
         role: "user",
         content:
           `Break the following task into an ordered sequence of steps, assigning each step ` +
-          `to the most appropriate agent based on its strengths.\n\n` +
+          `to the most appropriate agent based on its strengths.\n` +
+          `Use at most ${MAX_PLAN_STEPS} steps.\n\n` +
           `Available agents:\n${agentDescriptions}\n\n` +
           `User task: ${task}\n\n` +
           `Return a JSON array only:\n` +
@@ -124,7 +125,8 @@ function buildRepairContext(invalidOutput: string, parseError: string): Context 
         role: "user",
         content:
           `The following planner output is invalid JSON.\n` +
-          `Parse error: ${parseError}\n\n` +
+          `Parse error: ${parseError}\n` +
+          `Keep the repaired output to at most ${MAX_PLAN_STEPS} steps.\n\n` +
           `Invalid output:\n${invalidOutput}\n\n` +
           `Return ONLY a corrected JSON array with schema:\n` +
           `[{ "agent": "<key>", "instruction": "<what to do>", "requiresSubOrchestration": false }]`,
@@ -132,6 +134,8 @@ function buildRepairContext(invalidOutput: string, parseError: string): Context 
     ],
   };
 }
+
+const MAX_PLAN_STEPS = 7;
 
 function buildFallbackPlan(task: string): PlannerStep[] {
   const config = getConfig();
@@ -197,7 +201,16 @@ export async function plannerNode(
     );
   }
 
-  const taskPlan = rawPlan.map((step) =>
+  const limitedPlan = rawPlan.slice(0, MAX_PLAN_STEPS);
+
+  if (rawPlan.length > MAX_PLAN_STEPS) {
+    eventBus.emit(
+      "output",
+      `\n[PLANNER_WARNING] Plan had ${rawPlan.length} steps; truncated to ${MAX_PLAN_STEPS}.\n`
+    );
+  }
+
+  const taskPlan = limitedPlan.map((step) =>
     TaskStepSchema.parse({
       agent: step.agent,
       instruction: step.instruction,
