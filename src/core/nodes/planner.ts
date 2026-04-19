@@ -1,6 +1,8 @@
+import { existsSync } from "fs";
+import { execFileSync } from "child_process";
 import { getConfig } from "../../config/loader.js";
 import { getUserConfig } from "../../config/userConfig.js";
-import { TaskStepSchema } from "../../types/config.js";
+import { TaskStepSchema, type AgentConfig } from "../../types/config.js";
 import { z } from "zod";
 import { completeSimple } from "../../providers/complete.js";
 import { detectActiveProvider, supportsDirectApi } from "../../auth/refresh.js";
@@ -17,6 +19,35 @@ const PlannerResponseSchema = z.array(
 );
 
 type PlannerStep = z.infer<typeof PlannerResponseSchema>[number];
+type AgentEntry = [string, AgentConfig];
+
+const MAX_PLAN_STEPS = 7;
+
+function isCommandAvailable(command: string): boolean {
+  if (!command.trim()) return false;
+
+  // Absolute/relative binary path
+  if (command.includes("/") || command.includes("\\")) {
+    return existsSync(command);
+  }
+
+  try {
+    if (process.platform === "win32") {
+      execFileSync("where", [command], { stdio: "ignore" });
+    } else {
+      execFileSync("which", [command], { stdio: "ignore" });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getAvailableAgents(config: ReturnType<typeof getConfig>): AgentEntry[] {
+  return Object.entries(config.agents).filter(([, agent]) =>
+    isCommandAvailable(agent.command)
+  );
+}
 
 async function resolvePlannerProvider(): Promise<{
   providerId: string;
@@ -95,7 +126,11 @@ function parsePlannerSteps(raw: string): PlannerStep[] {
   throw new Error(`Planner output was not valid JSON: ${detail}`);
 }
 
-function buildPlannerContext(task: string, agentDescriptions: string): Context {
+function buildPlannerContext(
+  task: string,
+  agentDescriptions: string,
+  allowedKeys: string
+): Context {
   return {
     systemPrompt:
       "You are a task planner for a multi-agent AI coding system called Giraffe Code. " +
@@ -106,7 +141,8 @@ function buildPlannerContext(task: string, agentDescriptions: string): Context {
         content:
           `Break the following task into an ordered sequence of steps, assigning each step ` +
           `to the most appropriate agent based on its strengths.\n` +
-          `Use at most ${MAX_PLAN_STEPS} steps.\n\n` +
+          `Use at most ${MAX_PLAN_STEPS} steps.\n` +
+          `Allowed agent keys: ${allowedKeys}\n\n` +
           `Available agents:\n${agentDescriptions}\n\n` +
           `User task: ${task}\n\n` +
           `Return a JSON array only:\n` +
@@ -116,7 +152,11 @@ function buildPlannerContext(task: string, agentDescriptions: string): Context {
   };
 }
 
-function buildRepairContext(invalidOutput: string, parseError: string): Context {
+function buildRepairContext(
+  invalidOutput: string,
+  parseError: string,
+  allowedKeys: string
+): Context {
   return {
     systemPrompt:
       "You repair malformed JSON. Output only valid JSON array; no markdown, no explanation.",
@@ -126,7 +166,8 @@ function buildRepairContext(invalidOutput: string, parseError: string): Context 
         content:
           `The following planner output is invalid JSON.\n` +
           `Parse error: ${parseError}\n` +
-          `Keep the repaired output to at most ${MAX_PLAN_STEPS} steps.\n\n` +
+          `Keep the repaired output to at most ${MAX_PLAN_STEPS} steps.\n` +
+          `Allowed agent keys: ${allowedKeys}\n\n` +
           `Invalid output:\n${invalidOutput}\n\n` +
           `Return ONLY a corrected JSON array with schema:\n` +
           `[{ "agent": "<key>", "instruction": "<what to do>", "requiresSubOrchestration": false }]`,
@@ -135,15 +176,7 @@ function buildRepairContext(invalidOutput: string, parseError: string): Context 
   };
 }
 
-const MAX_PLAN_STEPS = 7;
-
-function buildFallbackPlan(task: string): PlannerStep[] {
-  const config = getConfig();
-  const knownAgents = Object.keys(config.agents);
-  const fallbackAgent = knownAgents.includes("claude")
-    ? "claude"
-    : (knownAgents[0] ?? "claude");
-
+function buildFallbackPlan(task: string, fallbackAgent: string): PlannerStep[] {
   return [
     {
       agent: fallbackAgent,
@@ -153,20 +186,58 @@ function buildFallbackPlan(task: string): PlannerStep[] {
   ];
 }
 
+function sanitizePlanAgents(
+  rawPlan: PlannerStep[],
+  availableAgentKeys: Set<string>,
+  fallbackAgent: string
+): PlannerStep[] {
+  let rewrites = 0;
+
+  const normalized = rawPlan.map((step) => {
+    if (availableAgentKeys.has(step.agent)) return step;
+    rewrites++;
+    return { ...step, agent: fallbackAgent };
+  });
+
+  if (rewrites > 0) {
+    eventBus.emit(
+      "output",
+      `\n[PLANNER_WARNING] Rewrote ${rewrites} step(s) to available agent "${fallbackAgent}".\n`
+    );
+  }
+
+  return normalized;
+}
+
 export async function plannerNode(
   state: GiraffeState
 ): Promise<Partial<GiraffeState>> {
   const config = getConfig();
   const { providerId, model } = await resolvePlannerProvider();
 
-  const agentDescriptions = Object.entries(config.agents)
+  const availableAgents = getAvailableAgents(config);
+  if (availableAgents.length === 0) {
+    throw new Error(
+      "No runnable agent CLIs found in PATH.\n" +
+        "Run: giraffe doctor\n" +
+        "Then install missing CLIs or update config/agents.yaml commands."
+    );
+  }
+
+  const availableAgentKeys = new Set(availableAgents.map(([key]) => key));
+  const fallbackAgent = availableAgentKeys.has("claude")
+    ? "claude"
+    : availableAgents[0]![0];
+
+  const agentDescriptions = availableAgents
     .map(
       ([key, agent]) =>
         `- ${key} (${agent.name}): strengths → ${agent.strengths.join(", ")}`
     )
     .join("\n");
 
-  const baseContext = buildPlannerContext(state.task, agentDescriptions);
+  const allowedKeys = [...availableAgentKeys].join(", ");
+  const baseContext = buildPlannerContext(state.task, agentDescriptions, allowedKeys);
 
   let rawPlan: PlannerStep[] | null = null;
   let invalidOutput = "";
@@ -176,7 +247,11 @@ export async function plannerNode(
     const context =
       attempt === 0
         ? baseContext
-        : buildRepairContext(invalidOutput, parseError || "Unknown JSON parse error");
+        : buildRepairContext(
+            invalidOutput,
+            parseError || "Unknown JSON parse error",
+            allowedKeys
+          );
 
     const result = await completeSimple(providerId, context, {
       model: model || undefined,
@@ -194,7 +269,7 @@ export async function plannerNode(
   }
 
   if (!rawPlan) {
-    rawPlan = buildFallbackPlan(state.task);
+    rawPlan = buildFallbackPlan(state.task, fallbackAgent);
     eventBus.emit(
       "output",
       `\n[PLANNER_WARNING] Planner returned malformed JSON. Falling back to single-step plan.\n`
@@ -210,7 +285,13 @@ export async function plannerNode(
     );
   }
 
-  const taskPlan = limitedPlan.map((step) =>
+  const sanitizedPlan = sanitizePlanAgents(
+    limitedPlan,
+    availableAgentKeys,
+    fallbackAgent
+  );
+
+  const taskPlan = sanitizedPlan.map((step) =>
     TaskStepSchema.parse({
       agent: step.agent,
       instruction: step.instruction,
