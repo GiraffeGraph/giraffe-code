@@ -6,7 +6,7 @@ import { TaskStepSchema, type AgentConfig } from "../../types/config.js";
 import { z } from "zod";
 import { completeSimple } from "../../providers/complete.js";
 import { detectActiveProvider, supportsDirectApi } from "../../auth/refresh.js";
-import { eventBus } from "../eventBus.js";
+
 import type { GiraffeState } from "../state.js";
 import type { Context } from "../../providers/types.js";
 
@@ -191,22 +191,11 @@ function sanitizePlanAgents(
   availableAgentKeys: Set<string>,
   fallbackAgent: string
 ): PlannerStep[] {
-  let rewrites = 0;
-
-  const normalized = rawPlan.map((step) => {
-    if (availableAgentKeys.has(step.agent)) return step;
-    rewrites++;
-    return { ...step, agent: fallbackAgent };
-  });
-
-  if (rewrites > 0) {
-    eventBus.emit(
-      "output",
-      `\n[PLANNER_WARNING] Rewrote ${rewrites} step(s) to available agent "${fallbackAgent}".\n`
-    );
-  }
-
-  return normalized;
+  return rawPlan.map((step) =>
+    availableAgentKeys.has(step.agent)
+      ? step
+      : { ...step, agent: fallbackAgent }
+  );
 }
 
 export async function plannerNode(
@@ -270,20 +259,9 @@ export async function plannerNode(
 
   if (!rawPlan) {
     rawPlan = buildFallbackPlan(state.task, fallbackAgent);
-    eventBus.emit(
-      "output",
-      `\n[PLANNER_WARNING] Planner returned malformed JSON. Falling back to single-step plan.\n`
-    );
   }
 
   const limitedPlan = rawPlan.slice(0, MAX_PLAN_STEPS);
-
-  if (rawPlan.length > MAX_PLAN_STEPS) {
-    eventBus.emit(
-      "output",
-      `\n[PLANNER_WARNING] Plan had ${rawPlan.length} steps; truncated to ${MAX_PLAN_STEPS}.\n`
-    );
-  }
 
   const sanitizedPlan = sanitizePlanAgents(
     limitedPlan,

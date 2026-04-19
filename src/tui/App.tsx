@@ -106,10 +106,21 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
 
     const handleError = (message: string): void => {
       const clean = parseApiError(message);
-      // Keep only first line of error + fix hint
       const firstLine = clean.split("\n")[0] ?? clean;
       const truncated = firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
-      setStatus(`${truncated}  →  /login or /model to fix`);
+
+      const lowered = firstLine.toLowerCase();
+      const isSetupIssue =
+        lowered.includes("agent cli command not found") ||
+        lowered.includes("no runnable agent clis") ||
+        lowered.includes("posix_spawnp failed") ||
+        lowered.includes("failed to start agent command");
+
+      const hint = isSetupIssue
+        ? "/doctor to fix agent setup"
+        : "/login or /model to fix";
+
+      setStatus(`${truncated}  →  ${hint}`);
       setCurrentAgent("—");
       setStepInfo("");
       setScreen("input");

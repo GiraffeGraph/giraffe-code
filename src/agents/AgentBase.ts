@@ -3,7 +3,7 @@ import type { IPty } from "node-pty";
 import {
   execFileSync,
   spawn as childSpawn,
-  type ChildProcessWithoutNullStreams,
+  type ChildProcess,
 } from "child_process";
 import { getConfig } from "../config/loader.js";
 import { extractHandoff } from "../core/HandoffParser.js";
@@ -26,30 +26,45 @@ function ensureAgentCommandExists(command: string): void {
 
 type TransportMode = "pty" | "child_pending" | "child" | null;
 
-function buildFallbackArgs(
+type ChildLaunch = {
+  args: string[];
+  passPromptViaStdin: boolean;
+};
+
+let ptyDisabled = false;
+let ptyDisabledReason = "";
+let ptyWarningEmitted = false;
+
+function buildFallbackLaunch(
   agentKey: string,
   baseArgs: string[],
   prompt: string
-): string[] {
+): ChildLaunch {
   const args = [...baseArgs];
   const lower = agentKey.toLowerCase();
   const hasPrint = args.includes("-p") || args.includes("--print");
 
-  // Known CLIs that support non-interactive print mode.
+  // Known CLIs that support non-interactive print mode with prompt arg.
   if ((lower === "claude" || lower === "pi") && !hasPrint) {
     args.push("-p");
   }
 
-  args.push(prompt);
-  return args;
+  if (lower === "claude" || lower === "pi" || hasPrint) {
+    args.push(prompt);
+    return { args, passPromptViaStdin: false };
+  }
+
+  // Generic fallback: launch command and pipe prompt via stdin.
+  return { args, passPromptViaStdin: true };
 }
 
 export abstract class AgentBase {
   abstract readonly agentKey: string;
 
   protected pty: IPty | null = null;
-  protected child: ChildProcessWithoutNullStreams | null = null;
+  protected child: ChildProcess | null = null;
   protected mode: TransportMode = null;
+  protected childNeedsStdin = false;
   protected outputBuffer = "";
 
   spawn(): void {
@@ -62,8 +77,14 @@ export abstract class AgentBase {
     this.pty = null;
     this.child = null;
     this.mode = null;
+    this.childNeedsStdin = false;
 
     ensureAgentCommandExists(agentConfig.command);
+
+    if (ptyDisabled) {
+      this.mode = "child_pending";
+      return;
+    }
 
     try {
       this.pty = nodePty.spawn(agentConfig.command, agentConfig.args, {
@@ -78,12 +99,18 @@ export abstract class AgentBase {
       this.mode = "pty";
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      ptyDisabled = true;
+      ptyDisabledReason = message;
       this.mode = "child_pending";
-      eventBus.emit(
-        "output",
-        `\n[AGENT_WARNING] ${this.agentKey}: node-pty spawn failed (${message}). ` +
-          `Falling back to non-interactive process mode.\n`
-      );
+
+      if (!ptyWarningEmitted) {
+        ptyWarningEmitted = true;
+        eventBus.emit(
+          "output",
+          `\n[AGENT_WARNING] node-pty is unavailable (${ptyDisabledReason}). ` +
+            `Using fallback process mode.\n`
+        );
+      }
     }
   }
 
@@ -106,13 +133,20 @@ export abstract class AgentBase {
     }
 
     if (this.mode === "child_pending") {
-      const args = buildFallbackArgs(this.agentKey, agentConfig.args, fullMessage);
+      const launch = buildFallbackLaunch(
+        this.agentKey,
+        agentConfig.args,
+        fullMessage
+      );
+
+      this.childNeedsStdin = launch.passPromptViaStdin;
 
       try {
-        this.child = childSpawn(agentConfig.command, args, {
+        this.child = childSpawn(agentConfig.command, launch.args, {
           cwd: process.cwd(),
           env: process.env,
-          stdio: ["pipe", "pipe", "pipe"],
+          // For print-mode CLIs, ignore stdin to avoid “no stdin data received” warnings.
+          stdio: [this.childNeedsStdin ? "pipe" : "ignore", "pipe", "pipe"],
         });
         this.mode = "child";
       } catch (err) {
@@ -122,13 +156,20 @@ export abstract class AgentBase {
         );
       }
 
+      if (this.childNeedsStdin && this.child.stdin?.writable) {
+        this.child.stdin.write(`${fullMessage}\n`);
+        this.child.stdin.end();
+        this.childNeedsStdin = false;
+      }
+
       return;
     }
 
-    if (this.mode === "child" && this.child?.stdin.writable) {
-      // Generic safety net for CLIs that read prompt from stdin.
+    if (this.mode === "child" && this.childNeedsStdin && this.child?.stdin?.writable) {
+      // Safety net if stdin write was deferred.
       this.child.stdin.write(`${fullMessage}\n`);
       this.child.stdin.end();
+      this.childNeedsStdin = false;
       return;
     }
 
@@ -164,7 +205,7 @@ export abstract class AgentBase {
       }
 
       if (this.mode === "child" && this.child) {
-        this.child.stdout.on("data", (chunk: Buffer) => {
+        this.child.stdout?.on("data", (chunk: Buffer) => {
           const data = chunk.toString("utf8");
           this.outputBuffer += data;
           eventBus.emit("output", data);
@@ -174,7 +215,7 @@ export abstract class AgentBase {
           }
         });
 
-        this.child.stderr.on("data", (chunk: Buffer) => {
+        this.child.stderr?.on("data", (chunk: Buffer) => {
           const data = chunk.toString("utf8");
           this.outputBuffer += data;
           eventBus.emit("output", data);
@@ -218,5 +259,6 @@ export abstract class AgentBase {
     }
 
     this.mode = null;
+    this.childNeedsStdin = false;
   }
 }
