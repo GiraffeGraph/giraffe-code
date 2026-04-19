@@ -1,4 +1,5 @@
 import { getConfig } from "../../config/loader.js";
+import { eventBus } from "../eventBus.js";
 import type { GiraffeState } from "../state.js";
 
 export async function routerNode(
@@ -12,6 +13,17 @@ export async function routerNode(
 
   const updatedPlan = state.taskPlan.map((step) =>
     step === pendingStep ? { ...step, status: "running" as const } : step
+  );
+
+  const stepIndex = state.taskPlan.indexOf(pendingStep) + 1;
+  const total = state.taskPlan.length;
+  const brief =
+    pendingStep.instruction.length > 100
+      ? `${pendingStep.instruction.slice(0, 100)}…`
+      : pendingStep.instruction;
+  eventBus.emit(
+    "output",
+    `\n🧭 Step ${stepIndex}/${total} → ${pendingStep.agent}: ${brief}\n`
   );
 
   return {

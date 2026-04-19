@@ -7,6 +7,7 @@ import { ModelSelector } from "./tui/ModelSelector.js";
 import { StatusScreen } from "./tui/StatusScreen.js";
 import { LogoutSelector } from "./tui/LogoutSelector.js";
 import { DoctorScreen } from "./tui/DoctorScreen.js";
+import { NativeLauncher } from "./tui/NativeLauncher.js";
 import { runNativeAgentSession } from "./core/nativeMode.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
@@ -185,13 +186,36 @@ if (command === "login") {
 // ── giraffe native [agent] [task] ────────────────────────────────────────────
 
 } else if (command === "native") {
-  try {
-    const code = runNativeAgentSession(commandArgs);
-    process.exit(code);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`\n[Giraffe Code] Native mode error:\n${message}\n\n`);
-    process.exit(1);
+  if (commandArgs.length === 0) {
+    const { unmount } = render(
+      React.createElement(NativeLauncher, {
+        onLaunch: (args: string[]) => {
+          unmount();
+          try {
+            const code = runNativeAgentSession(args);
+            process.exit(code);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`\n[Giraffe Code] Native mode error:\n${message}\n\n`);
+            process.exit(1);
+          }
+        },
+        onCancel: () => {
+          unmount();
+          process.exit(0);
+        },
+      })
+    );
+    process.on("SIGINT", () => { unmount(); process.exit(0); });
+  } else {
+    try {
+      const code = runNativeAgentSession(commandArgs);
+      process.exit(code);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`\n[Giraffe Code] Native mode error:\n${message}\n\n`);
+      process.exit(1);
+    }
   }
 
 // ── Normal run ────────────────────────────────────────────────────────────────

@@ -31,6 +31,10 @@ export function handoffNode(state: GiraffeState): Partial<GiraffeState> {
       lastAgentFailed: false,
     };
 
+    eventBus.emit(
+      "output",
+      `\n✅ ${runningStep.agent} completed step successfully.\n`
+    );
     eventBus.emit("stateUpdate", nextState);
     return nextState;
   }
@@ -58,6 +62,11 @@ export function handoffNode(state: GiraffeState): Partial<GiraffeState> {
       liveOutput: "",
       lastAgentFailed: true,
     };
+
+    eventBus.emit(
+      "output",
+      `\n⚠ ${runningStep.agent} exited without handoff. Retrying with fallback ${agentConf!.fallback!}.\n`
+    );
     eventBus.emit("stateUpdate", nextState);
     return nextState;
   }
@@ -72,6 +81,11 @@ export function handoffNode(state: GiraffeState): Partial<GiraffeState> {
     liveOutput: "",
     lastAgentFailed: false,
   };
+
+  eventBus.emit(
+    "output",
+    `\n❌ ${runningStep.agent} failed without valid handoff and no fallback left.\n`
+  );
   eventBus.emit("stateUpdate", nextState);
   return nextState;
 }

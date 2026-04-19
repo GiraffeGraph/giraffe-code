@@ -10,12 +10,21 @@ import { ModelSelector } from "./ModelSelector.js";
 import { StatusScreen } from "./StatusScreen.js";
 import { LogoutSelector } from "./LogoutSelector.js";
 import { DoctorScreen } from "./DoctorScreen.js";
+import { NativeLauncher } from "./NativeLauncher.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import { runNativeAgentSession } from "../core/nativeMode.js";
 import type { TaskStep } from "../types/config.js";
 
-type AppScreen = "login" | "input" | "running" | "model" | "status" | "logout" | "doctor";
+type AppScreen =
+  | "login"
+  | "input"
+  | "running"
+  | "model"
+  | "status"
+  | "logout"
+  | "doctor"
+  | "native_launcher";
 
 interface AppProps {
   initialTask: string;
@@ -65,6 +74,28 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       .catch((err: Error) => { eventBus.emit("error", err.message); });
   }, []);
 
+  const launchNative = useCallback((args: string[]) => {
+    setStatus("Launching native agent UI...");
+
+    try {
+      // Clear current Ink frame before handing terminal to agent UI.
+      process.stdout.write("\x1Bc");
+      const code = runNativeAgentSession(args);
+      setStatus(
+        code === 0
+          ? "Native session ended. Enter a task to begin"
+          : `Native session exited with code ${code}`
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setStatus(`Native mode error: ${message}`);
+    }
+
+    setCurrentAgent("—");
+    setStepInfo("");
+    setScreen("input");
+  }, []);
+
   const handleCommand = useCallback((cmd: string) => {
     if (cmd === "/login") {
       setScreen("login");
@@ -91,29 +122,16 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       return;
     }
 
-    if (cmd === "/native" || cmd.startsWith("/native ")) {
-      const args = cmd.trim().split(/\s+/).slice(1);
-      setStatus("Launching native agent UI...");
-
-      try {
-        // Clear current Ink frame before handing terminal to agent UI.
-        process.stdout.write("\x1Bc");
-        const code = runNativeAgentSession(args);
-        setStatus(
-          code === 0
-            ? "Native session ended. Enter a task to begin"
-            : `Native session exited with code ${code}`
-        );
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setStatus(`Native mode error: ${message}`);
-      }
-
-      setCurrentAgent("—");
-      setStepInfo("");
-      setScreen("input");
+    if (cmd === "/native") {
+      setScreen("native_launcher");
+      return;
     }
-  }, []);
+
+    if (cmd.startsWith("/native ")) {
+      const args = cmd.trim().split(/\s+/).slice(1);
+      launchNative(args);
+    }
+  }, [launchNative]);
 
   const returnToInput = useCallback(() => {
     setScreen("input");
@@ -251,6 +269,18 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     return (
       <Box flexDirection="column" height={rows}>
         <DoctorScreen onDone={returnToInput} />
+      </Box>
+    );
+  }
+
+  // ── Native launcher ───────────────────────────────────────────────────────
+  if (screen === "native_launcher") {
+    return (
+      <Box flexDirection="column" height={rows}>
+        <NativeLauncher
+          onLaunch={launchNative}
+          onCancel={returnToInput}
+        />
       </Box>
     );
   }
