@@ -347,15 +347,47 @@ export abstract class AgentBase {
   }
 
   waitForCompletion(): Promise<string> {
+    const timeoutMs =
+      Number(process.env["GIRAFFE_AGENT_TIMEOUT_MS"] || "") || 5 * 60 * 1000;
+
     return new Promise<string>((resolve) => {
       let settled = false;
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+      let killTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const clearTimers = (): void => {
+        if (timeoutTimer !== null) { clearTimeout(timeoutTimer); timeoutTimer = null; }
+        if (killTimer !== null) { clearTimeout(killTimer); killTimer = null; }
+      };
 
       const settle = (output: string): void => {
         if (!settled) {
           settled = true;
+          clearTimers();
           resolve(output);
         }
       };
+
+      const onTimeout = (): void => {
+        this.emitOutput(
+          `\n[AGENT_TIMEOUT] ${this.agentKey}: exceeded ${timeoutMs}ms — terminating\n`
+        );
+
+        if (this.mode === "pty" && this.pty) {
+          try { this.pty.kill(); } catch { /* already gone */ }
+        } else if (this.mode === "child" && this.child) {
+          try { this.child.kill("SIGTERM"); } catch { /* already gone */ }
+          killTimer = setTimeout(() => {
+            if (this.child) {
+              try { this.child.kill("SIGKILL"); } catch { /* already gone */ }
+            }
+          }, 5_000);
+        }
+
+        settle(this.outputBuffer);
+      };
+
+      timeoutTimer = setTimeout(onTimeout, timeoutMs);
 
       if (this.mode === "pty" && this.pty) {
         this.pty.onData((data: string) => {

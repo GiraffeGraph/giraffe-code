@@ -10,6 +10,7 @@ import { DoctorScreen } from "./tui/DoctorScreen.js";
 import { NativeLauncher } from "./tui/NativeLauncher.js";
 import { runNativeAgentSession } from "./core/nativeMode.js";
 import { buildSelfImproveTask } from "./core/improvePrompt.js";
+import { runHeadlessTask } from "./core/headlessRunner.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -31,6 +32,7 @@ type Command = (typeof COMMANDS)[number];
 let command: Command | undefined;
 const commandArgs: string[] = [];
 let configOverride: string | undefined;
+let forceHeadless = false;
 const taskParts: string[] = [];
 
 for (let i = 0; i < args.length; i++) {
@@ -39,6 +41,8 @@ for (let i = 0; i < args.length; i++) {
     command = arg as Command;
   } else if (arg === "--config" && i + 1 < args.length) {
     configOverride = args[++i];
+  } else if (arg === "--headless") {
+    forceHeadless = true;
   } else if (arg === "--help" || arg === "-h") {
     command = "help";
   } else if (!arg.startsWith("--")) {
@@ -55,6 +59,8 @@ const commandArg = commandArgs[0];
 const task = taskParts.join(" ").trim();
 const improveFocus = command === "improve" ? commandArgs.join(" ").trim() : "";
 const initialTask = command === "improve" ? buildSelfImproveTask(improveFocus) : task;
+const isInteractiveTty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+const shouldRunHeadless = forceHeadless || !isInteractiveTty;
 
 // ── Help ──────────────────────────────────────────────────────────────────────
 
@@ -79,6 +85,7 @@ Commands:
 
 Flags:
   --config <path>                Use a custom agents.yaml
+  --headless                     Run task without Ink TUI (CI/non-TTY friendly)
 
 Examples:
   giraffe "Add auth and write tests"
@@ -91,6 +98,7 @@ Examples:
   giraffe native claude "build a todo app"
   giraffe improve
   giraffe improve "focus on onboarding UX and docs"
+  giraffe improve --headless "focus on planner reliability"
 `);
   process.exit(0);
 }
@@ -110,6 +118,22 @@ if (command !== "status" && command !== "doctor") {
     process.stderr.write(`\n[Giraffe Code] Config error:\n${message}\n\n`);
     process.exit(1);
   }
+}
+
+const commandNeedsInteractiveTui =
+  command === "login" ||
+  command === "model" ||
+  command === "status" ||
+  command === "doctor" ||
+  (command === "logout" && !commandArg) ||
+  (command === "native" && commandArgs.length === 0);
+
+if (commandNeedsInteractiveTui && !isInteractiveTty) {
+  process.stderr.write(
+    "\n[Giraffe Code] This command requires an interactive terminal (TTY).\n" +
+      "Open a real terminal and retry, or use task commands with --headless.\n\n"
+  );
+  process.exit(1);
 }
 
 // ── giraffe login ─────────────────────────────────────────────────────────────
@@ -231,11 +255,37 @@ if (command === "login") {
 } else {
   const needsLogin = !hasAnyCredential();
 
-  const { unmount } = render(
-    React.createElement(App, {
-      initialTask,
-      needsLogin,
-    })
-  );
-  process.on("SIGINT", () => { unmount(); process.exit(0); });
+  if (shouldRunHeadless) {
+    if (!initialTask) {
+      process.stderr.write(
+        "\n[Giraffe Code] Non-interactive mode requires a task.\n" +
+        "Try: giraffe \"your task\" or giraffe improve --headless\n\n"
+      );
+      process.exit(1);
+    }
+
+    if (needsLogin) {
+      process.stderr.write(
+        "\n[Giraffe Code] No credentials found.\n" +
+        "Run `giraffe login` in a real terminal first, then retry with --headless.\n\n"
+      );
+      process.exit(1);
+    }
+
+    runHeadlessTask(initialTask)
+      .then((code) => process.exit(code))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`\n[Giraffe Code] Headless run failed:\n${message}\n\n`);
+        process.exit(1);
+      });
+  } else {
+    const { unmount } = render(
+      React.createElement(App, {
+        initialTask,
+        needsLogin,
+      })
+    );
+    process.on("SIGINT", () => { unmount(); process.exit(0); });
+  }
 }

@@ -87,6 +87,13 @@ giraffe improve
 giraffe improve "focus on onboarding UX and docs"
 ```
 
+### Headless mode (CI / non-TTY)
+
+```bash
+giraffe --headless "Refactor the database layer"
+giraffe improve --headless "focus on planner reliability"
+```
+
 ### With custom config
 
 ```bash
