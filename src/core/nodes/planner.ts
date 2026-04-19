@@ -3,7 +3,7 @@ import { getUserConfig } from "../../config/userConfig.js";
 import { TaskStepSchema } from "../../types/config.js";
 import { z } from "zod";
 import { completeSimple } from "../../providers/complete.js";
-import { detectActiveProvider } from "../../auth/refresh.js";
+import { detectActiveProvider, supportsDirectApi } from "../../auth/refresh.js";
 import type { GiraffeState } from "../state.js";
 import type { Context } from "../../providers/types.js";
 
@@ -22,10 +22,15 @@ async function resolvePlannerProvider(): Promise<{
   // User config (~/.giraffe/config.json) takes highest priority
   const userConfig = getUserConfig();
   if (userConfig.planner?.provider) {
-    return {
-      providerId: userConfig.planner.provider,
-      model: userConfig.planner.model ?? "",
-    };
+    const id = userConfig.planner.provider;
+    if (!supportsDirectApi(id)) {
+      throw new Error(
+        `Provider "${id}" uses a subscription OAuth token which cannot make direct API calls.\n` +
+          `Run: giraffe login  (choose the API Key option for OpenAI)\n` +
+          `Or:  giraffe model  (switch planner to Anthropic or Gemini)`
+      );
+    }
+    return { providerId: id, model: userConfig.planner.model ?? "" };
   }
 
   // Project config (agents.yaml) is next
@@ -33,10 +38,14 @@ async function resolvePlannerProvider(): Promise<{
   const plannerConfig = config.planner;
 
   if (plannerConfig?.provider) {
-    return {
-      providerId: plannerConfig.provider,
-      model: plannerConfig.model ?? "",
-    };
+    const id = plannerConfig.provider;
+    if (!supportsDirectApi(id)) {
+      throw new Error(
+        `Provider "${id}" uses a subscription OAuth token which cannot make direct API calls.\n` +
+          `Run: giraffe model  (switch planner to Anthropic or Gemini)`
+      );
+    }
+    return { providerId: id, model: plannerConfig.model ?? "" };
   }
 
   // Auto-detect first available authenticated provider
