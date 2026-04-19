@@ -7,7 +7,8 @@ const SLASH_COMMANDS = [
   { cmd: "/model",  hint: "choose planner model" },
   { cmd: "/status", hint: "show auth & config status" },
   { cmd: "/doctor", hint: "run health checks" },
-  { cmd: "/native", hint: "open native launcher or run /native <agent> <task>" }
+  { cmd: "/native", hint: "open native launcher or run /native <agent> <task>" },
+  { cmd: "/improve", hint: "dogfood mode: improve this repo (optional focus)" }
 ];
 
 interface InputBoxProps {
@@ -33,8 +34,13 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
       if (trimmed.startsWith("/")) {
         const lower = trimmed.toLowerCase();
 
-        // /native supports inline args: /native [agent] [task...]
-        if (lower === "/native" || lower.startsWith("/native ")) {
+        // /native and /improve support inline args
+        if (
+          lower === "/native" ||
+          lower.startsWith("/native ") ||
+          lower === "/improve" ||
+          lower.startsWith("/improve ")
+        ) {
           setValue("");
           onCommand(trimmed);
           return;
@@ -101,7 +107,7 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
               </Box>
             ))
           ) : (
-            <Text color="red">Unknown command. Available: /login /logout /model /status /doctor /native</Text>
+            <Text color="red">Unknown command. Available: /login /logout /model /status /doctor /native /improve</Text>
           )}
         </Box>
       ) : (

@@ -38,7 +38,7 @@ export function StatusBar({
           </Text>
         </>
       )}
-      <Text dimColor>    [/native: real UI]   [Q: quit]</Text>
+      <Text dimColor>    [/native: real UI]   [/improve: dogfood]   [Q: quit]</Text>
     </Box>
   );
 }

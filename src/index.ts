@@ -9,6 +9,7 @@ import { LogoutSelector } from "./tui/LogoutSelector.js";
 import { DoctorScreen } from "./tui/DoctorScreen.js";
 import { NativeLauncher } from "./tui/NativeLauncher.js";
 import { runNativeAgentSession } from "./core/nativeMode.js";
+import { buildSelfImproveTask } from "./core/improvePrompt.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -24,7 +25,7 @@ if (nodeMajor >= 25 && process.env["GIRAFFE_SUPPRESS_NODE_WARNING"] !== "1") {
   );
 }
 
-const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "help"] as const;
+const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 
 let command: Command | undefined;
@@ -52,6 +53,8 @@ for (let i = 0; i < args.length; i++) {
 const commandArg = commandArgs[0];
 
 const task = taskParts.join(" ").trim();
+const improveFocus = command === "improve" ? commandArgs.join(" ").trim() : "";
+const initialTask = command === "improve" ? buildSelfImproveTask(improveFocus) : task;
 
 // ── Help ──────────────────────────────────────────────────────────────────────
 
@@ -71,6 +74,7 @@ Commands:
   giraffe doctor                 Run health checks (auth/config/agent CLIs)
   giraffe native                 Open native launcher (agent picker + presets)
   giraffe native [agent] [task]  Launch real agent UI (1:1 terminal handover)
+  giraffe improve [focus]        Dogfood mode: use Giraffe to improve this repo
   giraffe help                   Show this help
 
 Flags:
@@ -85,6 +89,8 @@ Examples:
   giraffe doctor
   giraffe native
   giraffe native claude "build a todo app"
+  giraffe improve
+  giraffe improve "focus on onboarding UX and docs"
 `);
   process.exit(0);
 }
@@ -227,7 +233,7 @@ if (command === "login") {
 
   const { unmount } = render(
     React.createElement(App, {
-      initialTask: task,
+      initialTask,
       needsLogin,
     })
   );

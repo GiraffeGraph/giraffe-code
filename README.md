@@ -42,11 +42,15 @@ npm install -g @openai/codex               # Codex CLI
 # gemini: see https://ai.google.dev/gemini-api/docs/cli
 ```
 
-### API Keys
+### Authentication
+
+Use the built-in login flow (recommended):
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...   # Required — used by the planner LLM
+giraffe login
 ```
+
+You can still use environment variables if you prefer (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`).
 
 ---
 
@@ -76,6 +80,13 @@ npm run dev -- "Add an auth system, write tests, document it"
 npm run dev
 ```
 
+### Dogfood mode (let Giraffe improve this repo)
+
+```bash
+giraffe improve
+giraffe improve "focus on onboarding UX and docs"
+```
+
 ### With custom config
 
 ```bash
@@ -97,6 +108,13 @@ npm link
 giraffe "Your task here"
 ```
 
+### Native handover mode (real agent UI, 1:1)
+
+```bash
+giraffe native
+giraffe native claude "build a todo app"
+```
+
 ---
 
 ## Keyboard Shortcuts
@@ -105,6 +123,17 @@ giraffe "Your task here"
 |-----|--------|
 | `q` | Quit |
 | `Ctrl+C` | Force quit |
+
+## Slash Commands (Interactive)
+
+- `/login`
+- `/logout`
+- `/model`
+- `/status`
+- `/doctor`
+- `/native` (or `/native <agent> <task>`)
+- `/improve` (or `/improve <focus>`)
+
 
 ---
 

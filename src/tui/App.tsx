@@ -14,6 +14,7 @@ import { NativeLauncher } from "./NativeLauncher.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import { runNativeAgentSession } from "../core/nativeMode.js";
+import { buildSelfImproveTask } from "../core/improvePrompt.js";
 import type { TaskStep } from "../types/config.js";
 
 type AppScreen =
@@ -43,6 +44,18 @@ function parseApiError(msg: string): string {
     if (apiMsg) return msg.replace(jsonMatch[0], `: ${apiMsg}`);
   } catch { /* use original */ }
   return msg;
+}
+
+function parseInlineArgs(input: string): string[] {
+  const result: string[] = [];
+  const regex = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'|([^\s]+)/g;
+
+  for (const match of input.matchAll(regex)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? "";
+    result.push(value.replace(/\\(["'\\])/g, "$1"));
+  }
+
+  return result;
 }
 
 export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
@@ -130,10 +143,25 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     }
 
     if (cmd.startsWith("/native ")) {
-      const args = cmd.trim().split(/\s+/).slice(1);
+      const args = parseInlineArgs(cmd).slice(1);
       launchNative(args);
+      return;
     }
-  }, [launchNative]);
+
+    if (cmd === "/improve") {
+      const generated = buildSelfImproveTask();
+      setTask(generated);
+      startGraph(generated);
+      return;
+    }
+
+    if (cmd.startsWith("/improve ")) {
+      const focus = cmd.slice("/improve".length).trim();
+      const generated = buildSelfImproveTask(focus);
+      setTask(generated);
+      startGraph(generated);
+    }
+  }, [launchNative, startGraph]);
 
   const returnToInput = useCallback(() => {
     setScreen("input");
