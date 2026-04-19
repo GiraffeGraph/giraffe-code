@@ -9,11 +9,12 @@ import { LoginSelector } from "./LoginSelector.js";
 import { ModelSelector } from "./ModelSelector.js";
 import { StatusScreen } from "./StatusScreen.js";
 import { LogoutSelector } from "./LogoutSelector.js";
+import { DoctorScreen } from "./DoctorScreen.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import type { TaskStep } from "../types/config.js";
 
-type AppScreen = "login" | "input" | "running" | "model" | "status" | "logout";
+type AppScreen = "login" | "input" | "running" | "model" | "status" | "logout" | "doctor";
 
 interface AppProps {
   initialTask: string;
@@ -64,10 +65,11 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
   }, []);
 
   const handleCommand = useCallback((cmd: string) => {
-    if (cmd === "/login")  setScreen("login");
-    else if (cmd === "/model")  setScreen("model");
+    if (cmd === "/login") setScreen("login");
+    else if (cmd === "/model") setScreen("model");
     else if (cmd === "/status") setScreen("status");
     else if (cmd === "/logout") setScreen("logout");
+    else if (cmd === "/doctor") setScreen("doctor");
   }, []);
 
   const returnToInput = useCallback(() => {
@@ -183,6 +185,15 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     return (
       <Box flexDirection="column" height={rows}>
         <LogoutSelector onComplete={returnToInput} />
+      </Box>
+    );
+  }
+
+  // ── Doctor ────────────────────────────────────────────────────────────────
+  if (screen === "doctor") {
+    return (
+      <Box flexDirection="column" height={rows}>
+        <DoctorScreen onDone={returnToInput} />
       </Box>
     );
   }

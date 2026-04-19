@@ -6,6 +6,7 @@ const SLASH_COMMANDS = [
   { cmd: "/logout", hint: "remove saved credentials" },
   { cmd: "/model",  hint: "choose planner model" },
   { cmd: "/status", hint: "show auth & config status" },
+  { cmd: "/doctor", hint: "run health checks" },
 ];
 
 interface InputBoxProps {
@@ -89,7 +90,7 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
               </Box>
             ))
           ) : (
-            <Text color="red">Unknown command. Available: /login /logout /model /status</Text>
+            <Text color="red">Unknown command. Available: /login /logout /model /status /doctor</Text>
           )}
         </Box>
       ) : (

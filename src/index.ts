@@ -6,6 +6,7 @@ import { LoginSelector } from "./tui/LoginSelector.js";
 import { ModelSelector } from "./tui/ModelSelector.js";
 import { StatusScreen } from "./tui/StatusScreen.js";
 import { LogoutSelector } from "./tui/LogoutSelector.js";
+import { DoctorScreen } from "./tui/DoctorScreen.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -13,7 +14,7 @@ import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
 const args = process.argv.slice(2);
 
-const COMMANDS = ["login", "model", "status", "logout", "help"] as const;
+const COMMANDS = ["login", "model", "status", "logout", "doctor", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 
 let command: Command | undefined;
@@ -55,6 +56,7 @@ Commands:
   giraffe logout [provider]      Remove saved credentials
   giraffe model                  Choose the planner model
   giraffe status                 Show auth + config status
+  giraffe doctor                 Run health checks (auth/config/agent CLIs)
   giraffe help                   Show this help
 
 Flags:
@@ -66,6 +68,7 @@ Examples:
   giraffe model
   giraffe logout anthropic
   giraffe status
+  giraffe doctor
 `);
   process.exit(0);
 }
@@ -76,8 +79,8 @@ if (configOverride) {
   setConfigPath(configOverride);
 }
 
-if (command !== "status") {
-  // status reads config itself; others need it validated first
+if (command !== "status" && command !== "doctor") {
+  // status/doctor read config themselves; others need it validated first
   try {
     getConfig();
   } catch (err) {
@@ -145,6 +148,19 @@ if (command === "login") {
 } else if (command === "status") {
   const { unmount } = render(
     React.createElement(StatusScreen, {
+      onDone: () => {
+        unmount();
+        process.exit(0);
+      },
+    })
+  );
+  process.on("SIGINT", () => { unmount(); process.exit(0); });
+
+// ── giraffe doctor ────────────────────────────────────────────────────────────
+
+} else if (command === "doctor") {
+  const { unmount } = render(
+    React.createElement(DoctorScreen, {
       onDone: () => {
         unmount();
         process.exit(0);
