@@ -4,27 +4,37 @@ import { TaskTree } from "./TaskTree.js";
 import { AgentPanel } from "./AgentPanel.js";
 import { StatusBar } from "./StatusBar.js";
 import { InputBox } from "./InputBox.js";
+import { LoginSelector } from "./LoginSelector.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import type { TaskStep } from "../types/config.js";
 
+type AppScreen = "login" | "input" | "running";
+
 interface AppProps {
   initialTask: string;
+  needsLogin: boolean;
 }
 
-export function App({ initialTask }: AppProps): React.ReactElement {
+export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
+  const [screen, setScreen] = useState<AppScreen>(
+    needsLogin ? "login" : initialTask ? "running" : "input"
+  );
   const [task, setTask] = useState(initialTask);
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [taskPlan, setTaskPlan] = useState<TaskStep[]>([]);
   const [currentAgent, setCurrentAgent] = useState<string>("—");
   const [status, setStatus] = useState<string>(
-    initialTask ? "Initializing planner..." : "Enter a task to begin"
+    needsLogin
+      ? "Login required"
+      : initialTask
+        ? "Initializing planner..."
+        : "Enter a task to begin"
   );
   const [stepInfo, setStepInfo] = useState<string>("");
-  const [running, setRunning] = useState(false);
 
   const startGraph = useCallback((taskToRun: string) => {
-    setRunning(true);
+    setScreen("running");
     setStatus("Analyzing task...");
     setOutputLines([]);
     setTaskPlan([]);
@@ -40,8 +50,6 @@ export function App({ initialTask }: AppProps): React.ReactElement {
 
   useEffect(() => {
     const handleOutput = (chunk: string): void => {
-      // Split by newlines so each line is a separate element,
-      // preserving ANSI codes within each chunk.
       setOutputLines((prev) => [...prev, chunk]);
     };
 
@@ -54,7 +62,6 @@ export function App({ initialTask }: AppProps): React.ReactElement {
       if (Array.isArray(s["taskPlan"])) {
         const plan = s["taskPlan"] as TaskStep[];
         setTaskPlan(plan);
-
         const total = plan.length;
         const done = plan.filter(
           (p) => p.status === "done" || p.status === "failed"
@@ -70,13 +77,12 @@ export function App({ initialTask }: AppProps): React.ReactElement {
 
     const handleError = (message: string): void => {
       setStatus(`Error: ${message}`);
-      setRunning(false);
+      setScreen("input");
     };
 
     const handleDone = (): void => {
       setStatus("All tasks complete!");
       setStepInfo("");
-      setRunning(false);
     };
 
     eventBus.on("output", handleOutput);
@@ -92,11 +98,10 @@ export function App({ initialTask }: AppProps): React.ReactElement {
     };
   }, []);
 
-  // Kick off the graph immediately if a task was provided via CLI
+  // Start graph immediately if task was provided on CLI
   useEffect(() => {
-    if (initialTask && !running) {
-      setTask(initialTask);
-      startGraph(initialTask);
+    if (screen === "running" && task) {
+      startGraph(task);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -109,7 +114,27 @@ export function App({ initialTask }: AppProps): React.ReactElement {
 
   const rows = process.stdout.rows ?? 40;
 
-  if (!task && !running) {
+  // ── Login screen ──────────────────────────────────────────────────────────
+  if (screen === "login") {
+    return (
+      <Box flexDirection="column" height={rows}>
+        <LoginSelector
+          onComplete={(_providerId) => {
+            // Login done — proceed to task input or start graph
+            if (task) {
+              startGraph(task);
+            } else {
+              setScreen("input");
+              setStatus("Enter a task to begin");
+            }
+          }}
+        />
+      </Box>
+    );
+  }
+
+  // ── Task input screen (interactive mode) ──────────────────────────────────
+  if (screen === "input") {
     return (
       <Box flexDirection="column" height={rows}>
         <Box flexGrow={1}>
@@ -120,26 +145,19 @@ export function App({ initialTask }: AppProps): React.ReactElement {
             }}
           />
         </Box>
-        <StatusBar
-          currentAgent={currentAgent}
-          status={status}
-          stepInfo={stepInfo}
-        />
+        <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
       </Box>
     );
   }
 
+  // ── Main orchestration screen ─────────────────────────────────────────────
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1}>
         <TaskTree plan={taskPlan} />
         <AgentPanel lines={outputLines} />
       </Box>
-      <StatusBar
-        currentAgent={currentAgent}
-        status={status}
-        stepInfo={stepInfo}
-      />
+      <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
     </Box>
   );
 }

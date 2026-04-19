@@ -2,21 +2,24 @@
 import React from "react";
 import { render } from "ink";
 import { App } from "./tui/App.js";
-import { getConfig, setConfigPath, validateApiKey } from "./config/loader.js";
+import { LoginSelector } from "./tui/LoginSelector.js";
+import { getConfig, setConfigPath } from "./config/loader.js";
+import { hasAnyCredential } from "./auth/storage.js";
 
-// Parse CLI arguments
+// ── Parse CLI arguments ───────────────────────────────────────────────────────
+
 const args = process.argv.slice(2);
 
 let configOverride: string | undefined;
-let chainOverride: string | undefined;
 const taskParts: string[] = [];
+let isLoginCommand = false;
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
-  if (arg === "--config" && i + 1 < args.length) {
+  if (arg === "login") {
+    isLoginCommand = true;
+  } else if (arg === "--config" && i + 1 < args.length) {
     configOverride = args[++i];
-  } else if (arg === "--chain" && i + 1 < args.length) {
-    chainOverride = args[++i];
   } else if (!arg.startsWith("--")) {
     taskParts.push(arg);
   }
@@ -24,37 +27,51 @@ for (let i = 0; i < args.length; i++) {
 
 const task = taskParts.join(" ").trim();
 
-// Apply config path override before any config access
+// ── Apply overrides and validate config ───────────────────────────────────────
+
 if (configOverride) {
   setConfigPath(configOverride);
 }
 
-// Validate prerequisites before rendering the TUI
 try {
-  validateApiKey();
-  getConfig(); // Fail fast if agents.yaml is missing or invalid
+  getConfig(); // Fail fast if agents.yaml is missing or malformed
 } catch (err) {
   const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`\n[Giraffe Code] Startup error:\n${message}\n\n`);
+  process.stderr.write(`\n[Giraffe Code] Config error:\n${message}\n\n`);
   process.exit(1);
 }
 
-// If --chain was passed, we could override taskPlan here (Phase 3 feature)
-if (chainOverride) {
-  process.stderr.write(
-    `[Giraffe Code] --chain flag noted (${chainOverride}). ` +
-      `Manual chain override is a Phase 3 feature; using LLM planner for now.\n`
+// ── giraffe login — explicit re-authentication ────────────────────────────────
+
+if (isLoginCommand) {
+  const { unmount } = render(
+    React.createElement(LoginSelector, {
+      onComplete: (_providerId) => {
+        unmount();
+        process.stdout.write("\nLogin saved to ~/.giraffe/auth.json\n");
+        process.exit(0);
+      },
+    })
   );
+
+  process.on("SIGINT", () => {
+    unmount();
+    process.exit(0);
+  });
+
+} else {
+  // ── Normal run — check if login is needed first ──────────────────────────
+  const needsLogin = !hasAnyCredential();
+
+  const { unmount } = render(
+    React.createElement(App, {
+      initialTask: task,
+      needsLogin,
+    })
+  );
+
+  process.on("SIGINT", () => {
+    unmount();
+    process.exit(0);
+  });
 }
-
-// Render the TUI — App handles graph invocation internally
-const { unmount } = render(React.createElement(App, { initialTask: task }));
-
-// Keep the process alive until the user quits or the graph completes.
-// The App component calls process.exit(0) on 'q' keypress.
-// On natural completion, the 'done' event triggers a status update,
-// and the user presses 'q' to exit.
-process.on("SIGINT", () => {
-  unmount();
-  process.exit(0);
-});

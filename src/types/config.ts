@@ -11,7 +11,15 @@ export const AgentConfigSchema = z.object({
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
+export const PlannerConfigSchema = z.object({
+  provider: z.string().default(""),
+  model: z.string().default(""),
+});
+
+export type PlannerConfig = z.infer<typeof PlannerConfigSchema>;
+
 export const AgentsFileSchema = z.object({
+  planner: PlannerConfigSchema.optional(),
   agents: z.record(z.string(), AgentConfigSchema),
 });
 

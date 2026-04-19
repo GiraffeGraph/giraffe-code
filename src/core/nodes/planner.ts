@@ -1,10 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { getConfig } from "../../config/loader.js";
 import { TaskStepSchema } from "../../types/config.js";
 import { z } from "zod";
+import { completeSimple } from "../../providers/complete.js";
+import { detectActiveProvider } from "../../auth/refresh.js";
 import type { GiraffeState } from "../state.js";
-
-const anthropic = new Anthropic();
+import type { Context } from "../../providers/types.js";
 
 const PlannerResponseSchema = z.array(
   z.object({
@@ -14,10 +14,36 @@ const PlannerResponseSchema = z.array(
   })
 );
 
+async function resolvePlannerProvider(): Promise<{
+  providerId: string;
+  model: string;
+}> {
+  const config = getConfig();
+  const plannerConfig = config.planner;
+
+  if (plannerConfig?.provider) {
+    return {
+      providerId: plannerConfig.provider,
+      model: plannerConfig.model ?? "",
+    };
+  }
+
+  // Auto-detect first available authenticated provider
+  const detected = await detectActiveProvider();
+  if (!detected) {
+    throw new Error(
+      "No LLM provider configured for the planner.\nRun: giraffe login"
+    );
+  }
+
+  return { providerId: detected, model: "" };
+}
+
 export async function plannerNode(
   state: GiraffeState
 ): Promise<Partial<GiraffeState>> {
   const config = getConfig();
+  const { providerId, model } = await resolvePlannerProvider();
 
   const agentDescriptions = Object.entries(config.agents)
     .map(
@@ -26,37 +52,31 @@ export async function plannerNode(
     )
     .join("\n");
 
-  const prompt = `You are a task planner for a multi-agent AI coding system called Giraffe Code.
-Break the user's task into an ordered sequence of steps, assigning each step to the most appropriate agent based on its strengths.
+  const context: Context = {
+    systemPrompt:
+      "You are a task planner for a multi-agent AI coding system called Giraffe Code. " +
+      "Return only valid JSON — no markdown, no explanation, no code fences.",
+    messages: [
+      {
+        role: "user",
+        content:
+          `Break the following task into an ordered sequence of steps, assigning each step ` +
+          `to the most appropriate agent based on its strengths.\n\n` +
+          `Available agents:\n${agentDescriptions}\n\n` +
+          `User task: ${state.task}\n\n` +
+          `Return a JSON array only:\n` +
+          `[{ "agent": "<key>", "instruction": "<what to do>", "requiresSubOrchestration": false }]`,
+      },
+    ],
+  };
 
-Available agents:
-${agentDescriptions}
-
-User task: ${state.task}
-
-Return ONLY a valid JSON array. No markdown, no explanation, no code fences.
-Schema: [{ "agent": "<key>", "instruction": "<what to do>", "requiresSubOrchestration": false }]
-
-Rules:
-- Use agent keys exactly as listed above (claude, codex, pi, gemini)
-- "instruction" must be a clear, actionable task description
-- Set "requiresSubOrchestration" to true only for genuinely complex sub-tasks that need their own agent chain
-- Order steps logically (implementation before testing, code before docs)`;
-
-  const response = await anthropic.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }],
+  const result = await completeSimple(providerId, context, {
+    model: model || undefined,
+    maxTokens: 1024,
   });
 
-  const content = response.content[0];
-  if (content.type !== "text") {
-    throw new Error("Unexpected non-text response from planner LLM");
-  }
-
-  let rawText = content.text.trim();
-
-  // Strip markdown code fences if the model added them despite instructions
+  let rawText = result.text.trim();
+  // Strip markdown code fences if the model added them despite the system prompt
   rawText = rawText.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "");
 
   const rawPlan = PlannerResponseSchema.parse(JSON.parse(rawText));
