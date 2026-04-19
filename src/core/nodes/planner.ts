@@ -23,29 +23,21 @@ async function resolvePlannerProvider(): Promise<{
   const userConfig = getUserConfig();
   if (userConfig.planner?.provider) {
     const id = userConfig.planner.provider;
-    if (!supportsDirectApi(id)) {
-      throw new Error(
-        `Provider "${id}" uses a subscription OAuth token which cannot make direct API calls.\n` +
-          `Run: giraffe login  (choose the API Key option for OpenAI)\n` +
-          `Or:  giraffe model  (switch planner to Anthropic or Gemini)`
-      );
+    // Silently fall through if credential can't do direct API calls
+    if (supportsDirectApi(id)) {
+      return { providerId: id, model: userConfig.planner.model ?? "" };
     }
-    return { providerId: id, model: userConfig.planner.model ?? "" };
   }
 
   // Project config (agents.yaml) is next
   const config = getConfig();
   const plannerConfig = config.planner;
 
-  if (plannerConfig?.provider) {
-    const id = plannerConfig.provider;
-    if (!supportsDirectApi(id)) {
-      throw new Error(
-        `Provider "${id}" uses a subscription OAuth token which cannot make direct API calls.\n` +
-          `Run: giraffe model  (switch planner to Anthropic or Gemini)`
-      );
-    }
-    return { providerId: id, model: plannerConfig.model ?? "" };
+  if (plannerConfig?.provider && supportsDirectApi(plannerConfig.provider)) {
+    return {
+      providerId: plannerConfig.provider,
+      model: plannerConfig.model ?? "",
+    };
   }
 
   // Auto-detect first available authenticated provider

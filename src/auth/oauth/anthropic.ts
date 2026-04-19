@@ -8,21 +8,23 @@ import {
   exchangeCode,
 } from "./pkce.js";
 
-// client_id 9d1c250a is the Console/API app — registered on platform.claude.com,
-// NOT claude.ai. Using claude.ai/oauth/authorize with this client_id causes
-// "Invalid request format". Token endpoint must be api.anthropic.com (not
-// platform.claude.com) to avoid Cloudflare managed-challenge blocking.
-const AUTH_URL = "https://platform.claude.com/oauth/authorize";
-const TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
+// Reverse-engineered from anthropics/claude-code CLI + open-source implementations
+// (Roo-Code, pi.dev, opencode-anthropic-auth, anthropic-auth Rust crate).
+// AUTH_URL must be claude.ai — client_id 9d1c250a is registered there.
+// `code=true` is a non-standard param required by Anthropic's identity server.
+// TOKEN_URL: console.anthropic.com is used by most working implementations.
+const AUTH_URL = "https://claude.ai/oauth/authorize";
+const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+
+// user:file_upload triggers validation failures on some accounts — omitted.
 const SCOPES =
-  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
+  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers";
 
 const CALLBACK_PORT = 53692;
 const CALLBACK_PATH = "/callback";
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
 
-// Refresh 5 minutes before actual expiry to avoid token-expired errors mid-request
 const EARLY_REFRESH_MS = 5 * 60 * 1000;
 
 function buildCredential(
@@ -47,11 +49,12 @@ export async function loginAnthropic(
   const challenge = generateCodeChallenge(verifier);
   const state = generateState();
 
-  // Build URL manually — URLSearchParams encodes spaces as + but OAuth servers
-  // expect %20 (RFC 6749). Using encodeURIComponent gives proper %20 encoding.
+  // Build URL with encodeURIComponent — spaces become %20, not +.
+  // code=true is required by Anthropic's identity server for this flow.
   const authUrl =
     `${AUTH_URL}?` +
     [
+      ["code", "true"],
       ["response_type", "code"],
       ["client_id", CLIENT_ID],
       ["redirect_uri", REDIRECT_URI],
@@ -63,12 +66,7 @@ export async function loginAnthropic(
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");
 
-  // Start callback server before opening browser
-  const callbackPromise = waitForCallback(
-    CALLBACK_PORT,
-    CALLBACK_PATH,
-    state
-  );
+  const callbackPromise = waitForCallback(CALLBACK_PORT, CALLBACK_PATH, state);
 
   onProgress(`Opening browser for Anthropic login...\n${authUrl}`);
   openBrowser(authUrl);
@@ -83,6 +81,7 @@ export async function loginAnthropic(
     code,
     redirect_uri: REDIRECT_URI,
     code_verifier: verifier,
+    state,
   });
 
   return buildCredential(
