@@ -33,9 +33,48 @@ type ChildLaunch = {
   outputMode: ChildOutputMode;
 };
 
+type TransportPreference = "auto" | "pty" | "child";
+
 let ptyDisabled = false;
 let ptyDisabledReason = "";
 let ptyWarningEmitted = false;
+const agentInfoNoticesEmitted = new Set<string>();
+
+function toAgentEnvToken(agentKey: string): string {
+  return agentKey.replace(/[^a-z0-9]/gi, "_").toUpperCase();
+}
+
+function emitInfoOnce(id: string, message: string): void {
+  if (agentInfoNoticesEmitted.has(id)) return;
+  agentInfoNoticesEmitted.add(id);
+  eventBus.emit("output", message);
+}
+
+function parseTransportPreference(value: string | undefined): TransportPreference | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "auto" || normalized === "pty" || normalized === "child") {
+    return normalized;
+  }
+  return null;
+}
+
+function resolveTransportPreference(agentKey: string): TransportPreference {
+  const token = toAgentEnvToken(agentKey);
+  const specific = parseTransportPreference(process.env[`GIRAFFE_${token}_TRANSPORT`]);
+  if (specific) return specific;
+
+  const global = parseTransportPreference(process.env["GIRAFFE_AGENT_TRANSPORT"]);
+  if (global) return global;
+
+  // Reliability default: Claude orchestration uses child-process mode to avoid
+  // PTY input races during large task prompt injection.
+  if (agentKey.toLowerCase() === "claude") {
+    return "child";
+  }
+
+  return "auto";
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null) return null;
@@ -248,8 +287,28 @@ export abstract class AgentBase {
 
     ensureAgentCommandExists(agentConfig.command);
 
+    const transportPreference = resolveTransportPreference(this.agentKey);
+    const token = toAgentEnvToken(this.agentKey);
+
+    if (transportPreference === "child") {
+      this.mode = "child_pending";
+      emitInfoOnce(
+        `transport:${this.agentKey}:child`,
+        `\n[AGENT_INFO] ${this.agentKey}: using child-process mode for reliable orchestration. ` +
+          `Set GIRAFFE_${token}_TRANSPORT=pty to force PTY.\n`
+      );
+      return;
+    }
+
     if (ptyDisabled) {
       this.mode = "child_pending";
+      if (transportPreference === "pty") {
+        emitInfoOnce(
+          `transport:${this.agentKey}:pty_unavailable`,
+          `\n[AGENT_WARNING] ${this.agentKey}: PTY was requested but is unavailable (${ptyDisabledReason}). ` +
+            `Falling back to child-process mode.\n`
+        );
+      }
       return;
     }
 
@@ -268,15 +327,13 @@ export abstract class AgentBase {
       ptyDisabledReason = message;
       this.mode = "child_pending";
 
-      if (!ptyWarningEmitted) {
+      if (!ptyWarningEmitted && process.env["GIRAFFE_SUPPRESS_PTY_WARNING"] !== "1") {
         ptyWarningEmitted = true;
-        if (process.env["GIRAFFE_DEBUG"] === "1") {
-          eventBus.emit(
-            "output",
-            `\n[AGENT_WARNING] node-pty is unavailable (${ptyDisabledReason}). ` +
-              `Using fallback process mode.\n`
-          );
-        }
+        eventBus.emit(
+          "output",
+          `\n[AGENT_WARNING] node-pty is unavailable (${ptyDisabledReason}). ` +
+            `Using child-process fallback mode for remaining steps.\n`
+        );
       }
     }
   }

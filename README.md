@@ -122,6 +122,17 @@ giraffe native
 giraffe native claude "build a todo app"
 ```
 
+### Reliability knobs (optional)
+
+```bash
+# Agent execution timeout (default: 300000 ms)
+export GIRAFFE_AGENT_TIMEOUT_MS=600000
+
+# Transport mode: auto | child | pty (default claude=child, others=auto)
+export GIRAFFE_AGENT_TRANSPORT=auto
+export GIRAFFE_CLAUDE_TRANSPORT=pty
+```
+
 ---
 
 ## Keyboard Shortcuts
