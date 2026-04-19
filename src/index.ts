@@ -14,6 +14,14 @@ import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
 const args = process.argv.slice(2);
 
+const nodeMajor = Number(process.versions.node.split(".")[0] ?? "0");
+if (nodeMajor >= 25 && process.env["GIRAFFE_SUPPRESS_NODE_WARNING"] !== "1") {
+  process.stderr.write(
+    "\n[Giraffe Code] Warning: Node 25 may break interactive PTY mode (node-pty spawn).\n" +
+      "Use Node 22/24 LTS for full agent terminal UI.\n\n"
+  );
+}
+
 const COMMANDS = ["login", "model", "status", "logout", "doctor", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 

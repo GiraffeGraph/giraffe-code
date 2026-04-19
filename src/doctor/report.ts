@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 import { existsSync } from "fs";
+import nodePty from "node-pty";
 import { getConfig } from "../config/loader.js";
 import { getUserConfig } from "../config/userConfig.js";
 import { getCredential, hasAnyCredential } from "../auth/storage.js";
@@ -149,8 +150,61 @@ function describeCredential(providerId: string, cred: AuthCredential | undefined
   };
 }
 
+function checkNodeRuntime(): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+
+  const major = Number(process.versions.node.split(".")[0] ?? "0");
+  if (major >= 25) {
+    checks.push({
+      title: "Node runtime",
+      status: "warn",
+      detail: `Node ${process.versions.node} detected. node-pty is unreliable on Node 25 in this setup.`,
+      hint: "Use Node 22 or 24 LTS for full interactive agent UI.",
+    });
+  } else {
+    checks.push({
+      title: "Node runtime",
+      status: "pass",
+      detail: `Node ${process.versions.node}`,
+    });
+  }
+
+  try {
+    const cmd = process.platform === "win32" ? "cmd" : "/bin/echo";
+    const args: string[] =
+      process.platform === "win32" ? ["/c", "echo", "ok"] : ["ok"];
+
+    const p = nodePty.spawn(cmd, args, {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: process.cwd(),
+      env: process.env as Record<string, string>,
+    });
+    p.kill();
+
+    checks.push({
+      title: "node-pty",
+      status: "pass",
+      detail: "Pseudo-terminal spawn works.",
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    checks.push({
+      title: "node-pty",
+      status: "fail",
+      detail: `Pseudo-terminal spawn failed: ${message}`,
+      hint: "Install/use Node 22/24 LTS, then reinstall giraffe-code.",
+    });
+  }
+
+  return checks;
+}
+
 export function runDoctorReport(): DoctorReport {
   const checks: DoctorCheck[] = [];
+
+  checks.push(...checkNodeRuntime());
 
   checks.push(
     hasAnyCredential()
