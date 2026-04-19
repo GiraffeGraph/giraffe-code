@@ -25,15 +25,26 @@ function ensureAgentCommandExists(command: string): void {
 }
 
 type TransportMode = "pty" | "child_pending" | "child" | null;
+type ChildOutputMode = "raw" | "claude_stream_json";
 
 type ChildLaunch = {
   args: string[];
   passPromptViaStdin: boolean;
+  outputMode: ChildOutputMode;
 };
 
 let ptyDisabled = false;
 let ptyDisabledReason = "";
 let ptyWarningEmitted = false;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null) return null;
+  return value as Record<string, unknown>;
+}
+
+function hasAnyFlag(args: string[], flags: string[]): boolean {
+  return flags.some((f) => args.includes(f));
+}
 
 function buildFallbackLaunch(
   agentKey: string,
@@ -42,20 +53,108 @@ function buildFallbackLaunch(
 ): ChildLaunch {
   const args = [...baseArgs];
   const lower = agentKey.toLowerCase();
-  const hasPrint = args.includes("-p") || args.includes("--print");
 
-  // Known CLIs that support non-interactive print mode with prompt arg.
-  if ((lower === "claude" || lower === "pi") && !hasPrint) {
-    args.push("-p");
-  }
+  if (lower === "claude") {
+    if (!hasAnyFlag(args, ["-p", "--print"])) {
+      args.push("-p");
+    }
+    if (!hasAnyFlag(args, ["--verbose"])) {
+      args.push("--verbose");
+    }
+    if (!hasAnyFlag(args, ["--output-format"])) {
+      args.push("--output-format", "stream-json");
+    }
+    if (!hasAnyFlag(args, ["--include-partial-messages"])) {
+      args.push("--include-partial-messages");
+    }
 
-  if (lower === "claude" || lower === "pi" || hasPrint) {
+    const permissionMode = process.env["GIRAFFE_CLAUDE_PERMISSION_MODE"];
+    if (permissionMode && !hasAnyFlag(args, ["--permission-mode"])) {
+      args.push("--permission-mode", permissionMode);
+    }
+
     args.push(prompt);
-    return { args, passPromptViaStdin: false };
+    return {
+      args,
+      passPromptViaStdin: false,
+      outputMode: "claude_stream_json",
+    };
   }
 
-  // Generic fallback: launch command and pipe prompt via stdin.
-  return { args, passPromptViaStdin: true };
+  if (lower === "pi") {
+    if (!hasAnyFlag(args, ["-p", "--print"])) {
+      args.push("-p");
+    }
+    args.push(prompt);
+    return {
+      args,
+      passPromptViaStdin: false,
+      outputMode: "raw",
+    };
+  }
+
+  if (hasAnyFlag(args, ["-p", "--print"])) {
+    args.push(prompt);
+    return {
+      args,
+      passPromptViaStdin: false,
+      outputMode: "raw",
+    };
+  }
+
+  // Generic fallback for unknown CLIs
+  return {
+    args,
+    passPromptViaStdin: true,
+    outputMode: "raw",
+  };
+}
+
+function extractClaudeTextDelta(payload: unknown): string | null {
+  const root = asRecord(payload);
+  if (!root) return null;
+
+  if (root["type"] !== "stream_event") return null;
+  const event = asRecord(root["event"]);
+  if (!event) return null;
+
+  if (event["type"] !== "content_block_delta") return null;
+  const delta = asRecord(event["delta"]);
+  if (!delta) return null;
+
+  if (delta["type"] !== "text_delta") return null;
+  const text = delta["text"];
+  return typeof text === "string" ? text : null;
+}
+
+function extractClaudeToolMarker(payload: unknown): string | null {
+  const root = asRecord(payload);
+  if (!root) return null;
+
+  if (root["type"] !== "stream_event") return null;
+  const event = asRecord(root["event"]);
+  if (!event) return null;
+
+  if (event["type"] !== "content_block_start") return null;
+  const block = asRecord(event["content_block"]);
+  if (!block) return null;
+
+  if (block["type"] !== "tool_use") return null;
+  const name = block["name"];
+  if (typeof name !== "string" || name.length === 0) return null;
+
+  return `\n🔧 ${name}\n`;
+}
+
+function extractClaudeResultError(payload: unknown): string | null {
+  const root = asRecord(payload);
+  if (!root) return null;
+
+  if (root["type"] !== "result") return null;
+  if (root["is_error"] !== true) return null;
+  const result = root["result"];
+
+  return typeof result === "string" ? result : "Claude command failed";
 }
 
 export abstract class AgentBase {
@@ -65,7 +164,53 @@ export abstract class AgentBase {
   protected child: ChildProcess | null = null;
   protected mode: TransportMode = null;
   protected childNeedsStdin = false;
+  protected childOutputMode: ChildOutputMode = "raw";
+  protected childJsonLineBuffer = "";
   protected outputBuffer = "";
+
+  private emitOutput(text: string): void {
+    if (!text) return;
+    this.outputBuffer += text;
+    eventBus.emit("output", text);
+  }
+
+  private processClaudeStreamJsonChunk(chunk: string): void {
+    this.childJsonLineBuffer += chunk;
+
+    while (true) {
+      const newlineIndex = this.childJsonLineBuffer.indexOf("\n");
+      if (newlineIndex < 0) break;
+
+      const rawLine = this.childJsonLineBuffer.slice(0, newlineIndex);
+      this.childJsonLineBuffer = this.childJsonLineBuffer.slice(newlineIndex + 1);
+
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      let payload: unknown;
+      try {
+        payload = JSON.parse(line);
+      } catch {
+        // Ignore non-JSON diagnostics when in stream-json mode.
+        continue;
+      }
+
+      const toolMarker = extractClaudeToolMarker(payload);
+      if (toolMarker) {
+        this.emitOutput(toolMarker);
+      }
+
+      const delta = extractClaudeTextDelta(payload);
+      if (delta) {
+        this.emitOutput(delta);
+      }
+
+      const resultError = extractClaudeResultError(payload);
+      if (resultError) {
+        this.emitOutput(`\n[CLAUDE_ERROR] ${resultError}\n`);
+      }
+    }
+  }
 
   spawn(): void {
     const agentConfig = getConfig().agents[this.agentKey];
@@ -78,6 +223,8 @@ export abstract class AgentBase {
     this.child = null;
     this.mode = null;
     this.childNeedsStdin = false;
+    this.childOutputMode = "raw";
+    this.childJsonLineBuffer = "";
 
     ensureAgentCommandExists(agentConfig.command);
 
@@ -92,8 +239,6 @@ export abstract class AgentBase {
         cols: process.stdout.columns ?? 120,
         rows: process.stdout.rows ?? 40,
         cwd: process.cwd(),
-        // node-pty requires Record<string,string>; process.env has undefined values.
-        // This cast is safe on macOS/Linux where env values are always strings.
         env: process.env as Record<string, string>,
       });
       this.mode = "pty";
@@ -105,8 +250,6 @@ export abstract class AgentBase {
 
       if (!ptyWarningEmitted) {
         ptyWarningEmitted = true;
-        // Keep fallback quiet in normal usage; this is expected on some systems.
-        // Opt-in debug visibility via env var.
         if (process.env["GIRAFFE_DEBUG"] === "1") {
           eventBus.emit(
             "output",
@@ -144,12 +287,12 @@ export abstract class AgentBase {
       );
 
       this.childNeedsStdin = launch.passPromptViaStdin;
+      this.childOutputMode = launch.outputMode;
 
       try {
         this.child = childSpawn(agentConfig.command, launch.args, {
           cwd: process.cwd(),
           env: process.env,
-          // For print-mode CLIs, ignore stdin to avoid “no stdin data received” warnings.
           stdio: [this.childNeedsStdin ? "pipe" : "ignore", "pipe", "pipe"],
         });
         this.mode = "child";
@@ -169,8 +312,11 @@ export abstract class AgentBase {
       return;
     }
 
-    if (this.mode === "child" && this.childNeedsStdin && this.child?.stdin?.writable) {
-      // Safety net if stdin write was deferred.
+    if (
+      this.mode === "child" &&
+      this.childNeedsStdin &&
+      this.child?.stdin?.writable
+    ) {
       this.child.stdin.write(`${fullMessage}\n`);
       this.child.stdin.end();
       this.childNeedsStdin = false;
@@ -193,8 +339,7 @@ export abstract class AgentBase {
 
       if (this.mode === "pty" && this.pty) {
         this.pty.onData((data: string) => {
-          this.outputBuffer += data;
-          eventBus.emit("output", data);
+          this.emitOutput(data);
 
           if (extractHandoff(this.outputBuffer)) {
             settle(this.outputBuffer);
@@ -211,8 +356,12 @@ export abstract class AgentBase {
       if (this.mode === "child" && this.child) {
         this.child.stdout?.on("data", (chunk: Buffer) => {
           const data = chunk.toString("utf8");
-          this.outputBuffer += data;
-          eventBus.emit("output", data);
+
+          if (this.childOutputMode === "claude_stream_json") {
+            this.processClaudeStreamJsonChunk(data);
+          } else {
+            this.emitOutput(data);
+          }
 
           if (extractHandoff(this.outputBuffer)) {
             settle(this.outputBuffer);
@@ -221,18 +370,33 @@ export abstract class AgentBase {
 
         this.child.stderr?.on("data", (chunk: Buffer) => {
           const data = chunk.toString("utf8");
-          this.outputBuffer += data;
-          eventBus.emit("output", data);
+
+          // In stream-json mode, Claude emits useful content to stdout.
+          // Keep stderr mostly quiet, except explicit errors.
+          if (this.childOutputMode === "claude_stream_json") {
+            const lower = data.toLowerCase();
+            if (lower.includes("error") || lower.includes("failed")) {
+              this.emitOutput(data);
+            }
+            return;
+          }
+
+          this.emitOutput(data);
         });
 
         this.child.on("error", (err: Error) => {
-          const data = `\n[AGENT_ERROR] ${this.agentKey}: ${err.message}\n`;
-          this.outputBuffer += data;
-          eventBus.emit("output", data);
+          this.emitOutput(`\n[AGENT_ERROR] ${this.agentKey}: ${err.message}\n`);
           settle(this.outputBuffer);
         });
 
         this.child.on("exit", () => {
+          if (
+            this.childOutputMode === "claude_stream_json" &&
+            this.childJsonLineBuffer.trim().length > 0
+          ) {
+            this.processClaudeStreamJsonChunk("\n");
+          }
+
           settle(this.outputBuffer);
         });
 
@@ -264,5 +428,7 @@ export abstract class AgentBase {
 
     this.mode = null;
     this.childNeedsStdin = false;
+    this.childOutputMode = "raw";
+    this.childJsonLineBuffer = "";
   }
 }
