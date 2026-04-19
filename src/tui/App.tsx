@@ -79,7 +79,10 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
 
   useEffect(() => {
     const handleOutput = (chunk: string): void => {
-      setOutputLines((prev) => [...prev, chunk]);
+      setOutputLines((prev) => {
+        const next = [...prev, chunk];
+        return next.length > 2000 ? next.slice(-2000) : next;
+      });
     };
 
     const handleStateUpdate = (

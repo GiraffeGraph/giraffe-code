@@ -11,7 +11,10 @@ export const AgentPanel = memo(function AgentPanel({
   currentAgent,
 }: AgentPanelProps): React.ReactElement {
   const maxLines = Math.max((process.stdout.rows ?? 40) - 10, 10);
-  const visible = lines.slice(-maxLines);
+
+  const fullText = lines.join("").replace(/\r/g, "");
+  const allLines = fullText.split("\n");
+  const visible = allLines.slice(-maxLines);
 
   return (
     <Box
@@ -27,12 +30,12 @@ export const AgentPanel = memo(function AgentPanel({
         🦒 {currentAgent ? `${currentAgent.toUpperCase()} — Live Output` : "AGENT OUTPUT — Live"}
       </Text>
       <Box height={1} />
-      {visible.length === 0 ? (
+      {fullText.trim().length === 0 ? (
         <Text dimColor>waiting for the giraffe to start typing...</Text>
       ) : (
-        visible.map((chunk, i) => (
+        visible.map((line, i) => (
           <Text key={i} wrap="truncate">
-            {chunk}
+            {line}
           </Text>
         ))
       )}

@@ -68,8 +68,9 @@ function buildFallbackLaunch(
       args.push("--include-partial-messages");
     }
 
-    const permissionMode = process.env["GIRAFFE_CLAUDE_PERMISSION_MODE"];
-    if (permissionMode && !hasAnyFlag(args, ["--permission-mode"])) {
+    const permissionMode =
+      process.env["GIRAFFE_CLAUDE_PERMISSION_MODE"] ?? "acceptEdits";
+    if (!hasAnyFlag(args, ["--permission-mode"])) {
       args.push("--permission-mode", permissionMode);
     }
 
@@ -146,6 +147,17 @@ function extractClaudeToolMarker(payload: unknown): string | null {
   return `\n🔧 ${name}\n`;
 }
 
+function extractClaudeStatus(payload: unknown): string | null {
+  const root = asRecord(payload);
+  if (!root) return null;
+
+  if (root["type"] !== "system") return null;
+  if (root["subtype"] !== "status") return null;
+
+  const status = root["status"];
+  return typeof status === "string" && status.length > 0 ? status : null;
+}
+
 function extractClaudeResultError(payload: unknown): string | null {
   const root = asRecord(payload);
   if (!root) return null;
@@ -166,6 +178,7 @@ export abstract class AgentBase {
   protected childNeedsStdin = false;
   protected childOutputMode: ChildOutputMode = "raw";
   protected childJsonLineBuffer = "";
+  protected childLastStatus = "";
   protected outputBuffer = "";
 
   private emitOutput(text: string): void {
@@ -193,6 +206,12 @@ export abstract class AgentBase {
       } catch {
         // Ignore non-JSON diagnostics when in stream-json mode.
         continue;
+      }
+
+      const status = extractClaudeStatus(payload);
+      if (status && status !== this.childLastStatus) {
+        this.childLastStatus = status;
+        this.emitOutput(`\n⏳ ${status}\n`);
       }
 
       const toolMarker = extractClaudeToolMarker(payload);
@@ -225,6 +244,7 @@ export abstract class AgentBase {
     this.childNeedsStdin = false;
     this.childOutputMode = "raw";
     this.childJsonLineBuffer = "";
+    this.childLastStatus = "";
 
     ensureAgentCommandExists(agentConfig.command);
 
@@ -430,5 +450,6 @@ export abstract class AgentBase {
     this.childNeedsStdin = false;
     this.childOutputMode = "raw";
     this.childJsonLineBuffer = "";
+    this.childLastStatus = "";
   }
 }
