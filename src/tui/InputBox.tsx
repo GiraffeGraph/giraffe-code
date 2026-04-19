@@ -11,29 +11,30 @@ const SLASH_COMMANDS = [
 interface InputBoxProps {
   onSubmit: (task: string) => void;
   onCommand: (cmd: string) => void;
+  lastStatus?: string;
 }
 
-export function InputBox({ onSubmit, onCommand }: InputBoxProps): React.ReactElement {
+export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): React.ReactElement {
   const [value, setValue] = useState("");
 
   const isSlash = value.startsWith("/");
   const matches = isSlash
     ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(value.toLowerCase()))
     : [];
+  const isError = lastStatus?.startsWith("Error:") || lastStatus?.includes("error") || lastStatus?.includes("→");
 
   useInput((input, key) => {
     if (key.return) {
       const trimmed = value.trim();
       if (!trimmed) return;
       if (trimmed.startsWith("/")) {
-        // Check for exact or unambiguous match
         const exact = SLASH_COMMANDS.find((c) => c.cmd === trimmed.toLowerCase());
         const match = exact ?? (matches.length === 1 ? matches[0] : undefined);
         if (match) {
           setValue("");
           onCommand(match.cmd);
         }
-        // Else: unknown command — do nothing (stays in input)
+        // Unknown command: stay, let user see the no-match state
       } else {
         onSubmit(trimmed);
       }
@@ -42,6 +43,11 @@ export function InputBox({ onSubmit, onCommand }: InputBoxProps): React.ReactEle
 
     if (key.tab && matches.length === 1 && matches[0]) {
       setValue(matches[0].cmd);
+      return;
+    }
+
+    if (key.escape) {
+      setValue("");
       return;
     }
 
@@ -57,9 +63,15 @@ export function InputBox({ onSubmit, onCommand }: InputBoxProps): React.ReactEle
 
   return (
     <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
-      <Text bold color="yellow">
-        🦒 GIRAFFE CODE — Interactive Mode
-      </Text>
+      <Text bold color="yellow">🦒 GIRAFFE CODE — Interactive Mode</Text>
+
+      {/* Show last error with fix hint */}
+      {isError && lastStatus && (
+        <Box marginTop={1}>
+          <Text color="red">{lastStatus}</Text>
+        </Box>
+      )}
+
       <Box marginTop={1}>
         <Text bold>Enter task: </Text>
         <Text color={isSlash ? "yellow" : "green"}>{value}</Text>
@@ -67,7 +79,7 @@ export function InputBox({ onSubmit, onCommand }: InputBoxProps): React.ReactEle
       </Box>
 
       {/* Slash command autocomplete */}
-      {isSlash && (
+      {isSlash ? (
         <Box flexDirection="column" marginTop={1} paddingLeft={2}>
           {matches.length > 0 ? (
             matches.map((c) => (
@@ -77,16 +89,14 @@ export function InputBox({ onSubmit, onCommand }: InputBoxProps): React.ReactEle
               </Box>
             ))
           ) : (
-            <Text dimColor>Unknown command. Try /login, /model, /status, /logout</Text>
+            <Text color="red">Unknown command. Available: /login /logout /model /status</Text>
           )}
         </Box>
+      ) : (
+        <Box marginTop={1}>
+          <Text dimColor>/ for commands   Tab autocomplete   Esc clear   Ctrl+C quit</Text>
+        </Box>
       )}
-
-      <Box marginTop={1}>
-        <Text dimColor>
-          Enter to start   Tab to complete   /command for tools   Q quit
-        </Text>
-      </Box>
     </Box>
   );
 }

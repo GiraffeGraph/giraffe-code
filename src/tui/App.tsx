@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Box, useInput } from "ink";
+import { Box, Text, useInput } from "ink";
 import { TaskTree } from "./TaskTree.js";
 import { AgentPanel } from "./AgentPanel.js";
 import { StatusBar } from "./StatusBar.js";
@@ -18,6 +18,20 @@ type AppScreen = "login" | "input" | "running" | "model" | "status" | "logout";
 interface AppProps {
   initialTask: string;
   needsLogin: boolean;
+}
+
+// Parse "Provider API error (500): {"error":{"message":"..."}}}" → clean string
+function parseApiError(msg: string): string {
+  const jsonMatch = msg.match(/:\s*(\{[\s\S]*\})\s*$/);
+  if (!jsonMatch) return msg;
+  try {
+    const parsed = JSON.parse(jsonMatch[1] ?? "") as {
+      error?: { message?: string };
+    };
+    const apiMsg = parsed?.error?.message;
+    if (apiMsg) return msg.replace(jsonMatch[0], `: ${apiMsg}`);
+  } catch { /* use original */ }
+  return msg;
 }
 
 export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
@@ -45,17 +59,13 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     setCurrentAgent("—");
 
     runGraph(taskToRun)
-      .then(() => {
-        eventBus.emit("done");
-      })
-      .catch((err: Error) => {
-        eventBus.emit("error", err.message);
-      });
+      .then(() => { eventBus.emit("done"); })
+      .catch((err: Error) => { eventBus.emit("error", err.message); });
   }, []);
 
   const handleCommand = useCallback((cmd: string) => {
-    if (cmd === "/login") setScreen("login");
-    else if (cmd === "/model") setScreen("model");
+    if (cmd === "/login")  setScreen("login");
+    else if (cmd === "/model")  setScreen("model");
     else if (cmd === "/status") setScreen("status");
     else if (cmd === "/logout") setScreen("logout");
   }, []);
@@ -93,8 +103,13 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     };
 
     const handleError = (message: string): void => {
-      setStatus(`Error: ${message}`);
+      const clean = parseApiError(message);
+      // Keep only first line of error + fix hint
+      const firstLine = clean.split("\n")[0] ?? clean;
+      const truncated = firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
+      setStatus(`${truncated}  →  /login or /model to fix`);
       setCurrentAgent("—");
+      setStepInfo("");
       setScreen("input");
     };
 
@@ -116,7 +131,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     };
   }, []);
 
-  // Start graph immediately if task was provided on CLI
   useEffect(() => {
     if (screen === "running" && task) {
       startGraph(task);
@@ -124,11 +138,10 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // q quits ONLY in running mode — never intercept it while InputBox is active
   useInput((input, key) => {
-    if (screen === "running") return; // agents handle their own input
-    if (input === "q" || (key.ctrl && input === "c")) {
-      process.exit(0);
-    }
+    if (key.ctrl && input === "c") process.exit(0);
+    if (screen === "running" && input === "q") process.exit(0);
   });
 
   const rows = process.stdout.rows ?? 40;
@@ -138,12 +151,9 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     return (
       <Box flexDirection="column" height={rows}>
         <LoginSelector
-          onComplete={(_providerId) => {
-            if (task) {
-              startGraph(task);
-            } else {
-              returnToInput();
-            }
+          onComplete={() => {
+            if (task) startGraph(task);
+            else returnToInput();
           }}
         />
       </Box>
@@ -184,11 +194,9 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
         <GiraffeHeader />
         <Box flexGrow={1}>
           <InputBox
-            onSubmit={(t) => {
-              setTask(t);
-              startGraph(t);
-            }}
+            onSubmit={(t) => { setTask(t); startGraph(t); }}
             onCommand={handleCommand}
+            lastStatus={status}
           />
         </Box>
         <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
@@ -207,6 +215,9 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
         />
       </Box>
       <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
+      <Box paddingLeft={1}>
+        <Text dimColor>Q quit   Ctrl+C force quit</Text>
+      </Box>
     </Box>
   );
 }
