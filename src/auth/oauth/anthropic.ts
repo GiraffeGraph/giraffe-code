@@ -8,8 +8,12 @@ import {
   exchangeCode,
 } from "./pkce.js";
 
-const AUTH_URL = "https://claude.ai/oauth/authorize";
-const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+// client_id 9d1c250a is the Console/API app — registered on platform.claude.com,
+// NOT claude.ai. Using claude.ai/oauth/authorize with this client_id causes
+// "Invalid request format". Token endpoint must be api.anthropic.com (not
+// platform.claude.com) to avoid Cloudflare managed-challenge blocking.
+const AUTH_URL = "https://platform.claude.com/oauth/authorize";
+const TOKEN_URL = "https://api.anthropic.com/v1/oauth/token";
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const SCOPES =
   "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
