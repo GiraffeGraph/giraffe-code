@@ -1,15 +1,33 @@
-import { readFileSync, writeFileSync, existsSync, chmodSync } from "fs";
+import {
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  chmodSync,
+  mkdirSync,
+} from "fs";
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 
 export interface UserConfig {
   planner?: {
     provider: string;
     model: string;
   };
+  native?: {
+    defaultAgent?: string;
+    lastTask?: string;
+    savedTasks?: string[];
+  };
 }
 
 const CONFIG_PATH = join(homedir(), ".giraffe", "config.json");
+
+function ensureConfigDir(): void {
+  const dir = dirname(CONFIG_PATH);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+}
 
 export function getUserConfig(): UserConfig {
   if (!existsSync(CONFIG_PATH)) return {};
@@ -21,6 +39,7 @@ export function getUserConfig(): UserConfig {
 }
 
 export function setUserConfig(config: UserConfig): void {
+  ensureConfigDir();
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), {
     mode: 0o600,
     encoding: "utf8",

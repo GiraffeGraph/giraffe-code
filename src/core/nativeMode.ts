@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from "child_process";
 import { getConfig } from "../config/loader.js";
+import { getUserConfig, setUserConfig } from "../config/userConfig.js";
 
 function commandExists(command: string): boolean {
   try {
@@ -25,9 +26,12 @@ function resolveAgentFromArgs(commandArgs: string[]): {
   const config = getConfig();
   const knownAgents = Object.keys(config.agents);
 
-  const defaultAgent = knownAgents.includes("claude")
-    ? "claude"
-    : (knownAgents[0] ?? "claude");
+  const userDefault = getUserConfig().native?.defaultAgent;
+  const defaultAgent = userDefault && knownAgents.includes(userDefault)
+    ? userDefault
+    : knownAgents.includes("claude")
+      ? "claude"
+      : (knownAgents[0] ?? "claude");
 
   const first = commandArgs[0]?.trim();
   if (first && knownAgents.includes(first)) {
@@ -86,6 +90,17 @@ export function runNativeAgentSession(commandArgs: string[]): number {
   }
 
   const args = buildArgsForNative(agentKey, task);
+
+  // Remember latest native choices for better launcher defaults.
+  const currentUserConfig = getUserConfig();
+  setUserConfig({
+    ...currentUserConfig,
+    native: {
+      ...(currentUserConfig.native ?? {}),
+      defaultAgent: agentKey,
+      lastTask: task || currentUserConfig.native?.lastTask,
+    },
+  });
 
   process.stdout.write(
     `\n🦒 Native mode → ${agent.name} (${agent.command})\n` +

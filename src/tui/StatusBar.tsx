@@ -38,7 +38,7 @@ export function StatusBar({
           </Text>
         </>
       )}
-      <Text dimColor>    [Q: quit]</Text>
+      <Text dimColor>    [/native: real UI]   [Q: quit]</Text>
     </Box>
   );
 }

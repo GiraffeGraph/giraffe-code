@@ -69,6 +69,7 @@ Commands:
   giraffe model                  Choose the planner model
   giraffe status                 Show auth + config status
   giraffe doctor                 Run health checks (auth/config/agent CLIs)
+  giraffe native                 Open native launcher (agent picker + presets)
   giraffe native [agent] [task]  Launch real agent UI (1:1 terminal handover)
   giraffe help                   Show this help
 
@@ -82,6 +83,7 @@ Examples:
   giraffe logout anthropic
   giraffe status
   giraffe doctor
+  giraffe native
   giraffe native claude "build a todo app"
 `);
   process.exit(0);

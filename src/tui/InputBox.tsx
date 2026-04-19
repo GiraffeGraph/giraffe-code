@@ -7,7 +7,7 @@ const SLASH_COMMANDS = [
   { cmd: "/model",  hint: "choose planner model" },
   { cmd: "/status", hint: "show auth & config status" },
   { cmd: "/doctor", hint: "run health checks" },
-  { cmd: "/native", hint: "launch real agent UI (e.g. /native claude build todo app)" },
+  { cmd: "/native", hint: "open native launcher or run /native <agent> <task>" }
 ];
 
 interface InputBoxProps {

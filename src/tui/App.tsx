@@ -84,7 +84,9 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       setStatus(
         code === 0
           ? "Native session ended. Enter a task to begin"
-          : `Native session exited with code ${code}`
+          : code === 130
+            ? "Native session cancelled. Enter a task to begin"
+            : `Native session exited with code ${code}`
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
