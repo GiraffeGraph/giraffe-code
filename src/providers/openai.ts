@@ -1,60 +1,48 @@
 import type { Provider, Context, CompletionOptions, CompletionResult } from "./types.js";
 
-// Uses the OpenAI Chat Completions API — works with both API keys and
-// subscription OAuth tokens from ChatGPT Plus/Codex.
-// The Responses API (v1/responses) is the newer alternative but Chat Completions
-// is stable and universally supported with subscription tokens.
+// Uses the OpenAI Responses API (/v1/responses) which is what the Codex CLI
+// uses and supports gpt-5.x models with subscription OAuth tokens.
+// Chat Completions (/v1/chat/completions) does not support these models.
 
-type OpenAIMessage = {
-  role: "system" | "user" | "assistant";
-  content:
-    | string
-    | Array<
-        | { type: "text"; text: string }
-        | { type: "image_url"; image_url: { url: string } }
-      >;
+type ResponsesInput = Array<{ role: "user" | "assistant"; content: string }>;
+
+type ResponsesBody = {
+  model: string;
+  input: ResponsesInput;
+  max_output_tokens: number;
+  instructions?: string;
 };
 
-type OpenAIChatResponse = {
-  choices: Array<{
-    message: { role: string; content: string | null };
-  }>;
+type ResponsesOutput = {
+  type: string;
+  role: string;
+  content: Array<{ type: string; text: string }>;
+};
+
+type ResponsesResult = {
+  output: ResponsesOutput[];
   model: string;
 };
 
-function translateMessages(context: Context): OpenAIMessage[] {
-  const messages: OpenAIMessage[] = [];
-
-  if (context.systemPrompt) {
-    messages.push({ role: "system", content: context.systemPrompt });
-  }
+function buildInput(context: Context): { input: ResponsesInput; instructions?: string } {
+  const input: ResponsesInput = [];
 
   for (const msg of context.messages) {
-    if (msg.role === "assistant") {
-      messages.push({ role: "assistant", content: msg.content });
-      continue;
-    }
-
-    if (typeof msg.content === "string") {
-      messages.push({ role: "user", content: msg.content });
-      continue;
-    }
-
-    messages.push({
-      role: "user",
-      content: msg.content.map((block) => {
-        if (block.type === "text") {
-          return { type: "text" as const, text: block.text };
-        }
-        return {
-          type: "image_url" as const,
-          image_url: { url: `data:${block.mimeType};base64,${block.data}` },
-        };
-      }),
-    });
+    const role = msg.role === "assistant" ? "assistant" : "user";
+    const content =
+      typeof msg.content === "string"
+        ? msg.content
+        : msg.content
+            .filter((b) => b.type === "text")
+            .map((b) => b.text)
+            .join("\n");
+    input.push({ role, content });
   }
 
-  return messages;
+  return {
+    input,
+    instructions: context.systemPrompt,
+  };
 }
 
 export const openaiProvider: Provider = {
@@ -67,19 +55,25 @@ export const openaiProvider: Provider = {
     options?: CompletionOptions
   ): Promise<CompletionResult> {
     const model = options?.model ?? this.defaultModel;
-    const messages = translateMessages(context);
+    const { input, instructions } = buildInput(context);
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const body: ResponsesBody = {
+      model,
+      input,
+      max_output_tokens: options?.maxTokens ?? 1024,
+    };
+
+    if (instructions) {
+      body.instructions = instructions;
+    }
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        max_tokens: options?.maxTokens ?? 1024,
-        messages,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -87,9 +81,15 @@ export const openaiProvider: Provider = {
       throw new Error(`OpenAI API error (${response.status}): ${err}`);
     }
 
-    const data = (await response.json()) as OpenAIChatResponse;
-    const text = data.choices[0]?.message?.content ?? "";
+    const data = (await response.json()) as ResponsesResult;
 
-    return { text, providerId: this.id, model: data.model };
+    const text = (data.output ?? [])
+      .filter((item) => item.type === "message")
+      .flatMap((item) => item.content ?? [])
+      .filter((c) => c.type === "output_text")
+      .map((c) => c.text)
+      .join("");
+
+    return { text, providerId: this.id, model: data.model ?? model };
   },
 };

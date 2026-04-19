@@ -43,17 +43,21 @@ export async function loginAnthropic(
   const challenge = generateCodeChallenge(verifier);
   const state = generateState();
 
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
-    scope: SCOPES,
-    code_challenge: challenge,
-    code_challenge_method: "S256",
-    state,
-  });
-
-  const authUrl = `${AUTH_URL}?${params}`;
+  // Build URL manually — URLSearchParams encodes spaces as + but OAuth servers
+  // expect %20 (RFC 6749). Using encodeURIComponent gives proper %20 encoding.
+  const authUrl =
+    `${AUTH_URL}?` +
+    [
+      ["response_type", "code"],
+      ["client_id", CLIENT_ID],
+      ["redirect_uri", REDIRECT_URI],
+      ["scope", SCOPES],
+      ["code_challenge", challenge],
+      ["code_challenge_method", "S256"],
+      ["state", state],
+    ]
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join("&");
 
   // Start callback server before opening browser
   const callbackPromise = waitForCallback(
