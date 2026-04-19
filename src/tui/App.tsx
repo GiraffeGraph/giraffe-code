@@ -4,6 +4,7 @@ import { TaskTree } from "./TaskTree.js";
 import { AgentPanel } from "./AgentPanel.js";
 import { StatusBar } from "./StatusBar.js";
 import { InputBox } from "./InputBox.js";
+import { GiraffeHeader } from "./GiraffeHeader.js";
 import { LoginSelector } from "./LoginSelector.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
@@ -137,6 +138,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
   if (screen === "input") {
     return (
       <Box flexDirection="column" height={rows}>
+        <GiraffeHeader />
         <Box flexGrow={1}>
           <InputBox
             onSubmit={(t) => {
@@ -155,7 +157,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1}>
         <TaskTree plan={taskPlan} />
-        <AgentPanel lines={outputLines} />
+        <AgentPanel lines={outputLines} currentAgent={currentAgent !== "—" ? currentAgent : undefined} />
       </Box>
       <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
     </Box>

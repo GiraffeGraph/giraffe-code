@@ -99,7 +99,7 @@ export function LoginSelector({ onComplete }: LoginSelectorProps): React.ReactEl
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Text bold color="cyan">
+      <Text bold color="yellow">
         🦒 GIRAFFE CODE — Login
       </Text>
       <Box height={1} />
@@ -144,8 +144,8 @@ function SelectMenu({ cursor }: { cursor: number }): React.ReactElement {
       <Box height={1} />
       {PROVIDERS.map((p, i) => (
         <Box key={p.id}>
-          <Text color={i === cursor ? "cyan" : "white"}>
-            {i === cursor ? "❯ " : "  "}
+          <Text color={i === cursor ? "yellow" : "white"}>
+            {i === cursor ? "🦒 " : "   "}
             {p.label}
           </Text>
         </Box>
@@ -204,7 +204,7 @@ function OAuthProgress({
       <Box height={1} />
       {message.split("\n").map((line, i) => (
         <Text key={i} dimColor={i > 0} color={i === 0 ? "yellow" : undefined}>
-          {line}
+          {i === 0 ? "🦒 " : "   "}{line}
         </Text>
       ))}
     </Box>

@@ -7,26 +7,38 @@ interface StatusBarProps {
   stepInfo: string;
 }
 
+const GIRAFFE_MESSAGES: Record<string, string> = {
+  claude: "🦒 claude is chewing on your code...",
+  codex: "🦒 codex is stretching its long neck into the codebase...",
+  gemini: "🦒 gemini is grazing through the docs...",
+  pi: "🦒 pi is spotting bugs from a high altitude...",
+};
+
 export function StatusBar({
   currentAgent,
   status,
   stepInfo,
 }: StatusBarProps): React.ReactElement {
+  const giraffeStatus =
+    GIRAFFE_MESSAGES[currentAgent.toLowerCase()] ?? status;
+
   return (
-    <Box borderStyle="single" paddingLeft={1} paddingRight={1}>
-      <Text bold color="cyan">
-        STATUS:{" "}
+    <Box borderStyle="round" borderColor="yellow" paddingLeft={1} paddingRight={1}>
+      <Text bold color="yellow">
+        🦒{" "}
       </Text>
-      <Text>{currentAgent}</Text>
-      <Text dimColor> — </Text>
-      <Text>{status}</Text>
+      <Text color="yellow" bold>
+        {currentAgent !== "—" ? giraffeStatus : status}
+      </Text>
       {stepInfo && (
         <>
           <Text dimColor>  </Text>
-          <Text dimColor>{stepInfo}</Text>
+          <Text color="yellow" dimColor>
+            [{stepInfo}]
+          </Text>
         </>
       )}
-      <Text dimColor>    [Q: Quit]</Text>
+      <Text dimColor>    [Q: quit]</Text>
     </Box>
   );
 }

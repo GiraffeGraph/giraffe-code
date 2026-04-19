@@ -1,7 +1,7 @@
 {
   "name": "giraffe-code",
   "version": "0.1.0-alpha",
-  "description": "Hierarchical multi-agent orchestration for AI coding tools",
+  "description": "Hierarchical multi-agent AI orchestration — run Claude, Codex, Gemini and more in sequence from a single CLI",
   "type": "module",
   "bin": {
     "giraffe": "./dist/index.js"
@@ -10,9 +10,41 @@
     "dev": "tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm run build"
   },
-  "keywords": ["ai", "agents", "orchestration", "cli"],
+  "files": [
+    "dist",
+    "config",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "multi-agent",
+    "orchestration",
+    "cli",
+    "claude",
+    "codex",
+    "gemini",
+    "langgraph",
+    "coding-assistant"
+  ],
+  "author": {
+    "name": "Yahya Efe Kuruçay",
+    "email": "efekurucay24@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GiraffeGraph/giraffe-code.git"
+  },
+  "homepage": "https://github.com/GiraffeGraph/giraffe-code#readme",
+  "bugs": {
+    "url": "https://github.com/GiraffeGraph/giraffe-code/issues"
+  },
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",

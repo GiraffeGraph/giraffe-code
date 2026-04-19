@@ -8,12 +8,12 @@ interface TaskTreeProps {
 
 function statusIcon(status: TaskStep["status"]): string {
   const icons: Record<TaskStep["status"], string> = {
-    pending: "⏸ ",
-    running: "⏳",
-    done: "✅",
-    failed: "❌",
+    pending: "○",
+    running: "🦒",
+    done: "✓",
+    failed: "✗",
   };
-  return icons[status] ?? "  ";
+  return icons[status] ?? "○";
 }
 
 function statusColor(
@@ -33,16 +33,17 @@ export function TaskTree({ plan }: TaskTreeProps): React.ReactElement {
     <Box
       flexDirection="column"
       width={32}
-      borderStyle="single"
+      borderStyle="round"
+      borderColor="yellow"
       paddingLeft={1}
       paddingRight={1}
     >
-      <Text bold underline>
-        TASK PLAN
+      <Text bold color="yellow">
+        🦒 TASK PLAN
       </Text>
       <Box height={1} />
       {plan.length === 0 ? (
-        <Text dimColor>Planning...</Text>
+        <Text dimColor>chewing on the task...</Text>
       ) : (
         plan.map((step, i) => (
           <Box key={i} flexDirection="column" marginBottom={1}>
@@ -50,11 +51,11 @@ export function TaskTree({ plan }: TaskTreeProps): React.ReactElement {
               <Text color={statusColor(step.status)}>
                 {statusIcon(step.status)}{" "}
               </Text>
-              <Text bold>
+              <Text bold color={step.status === "running" ? "yellow" : "white"}>
                 {i + 1}. {step.agent}
               </Text>
             </Box>
-            <Box paddingLeft={3}>
+            <Box paddingLeft={2}>
               <Text dimColor wrap="truncate">
                 {step.instruction.length > 26
                   ? step.instruction.slice(0, 26) + "…"
