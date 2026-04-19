@@ -1,2 +1,12 @@
 node_modules
 .DS_Store
+
+# Build output
+dist
+
+# npm pack artifacts
+*.tgz
+
+# Environment / secrets
+.env
+.env.*
