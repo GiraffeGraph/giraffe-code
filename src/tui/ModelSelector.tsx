@@ -33,7 +33,7 @@ const PROVIDER_MODELS: Record<string, ModelEntry[]> = {
 
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: "Anthropic",
-  "openai-codex": "OpenAI Codex  ⚠ requires API key, not subscription",
+  "openai-codex": "OpenAI Codex",
   gemini: "Google Gemini",
 };
 

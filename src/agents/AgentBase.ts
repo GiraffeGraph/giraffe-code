@@ -5,6 +5,21 @@ import { getConfig } from "../config/loader.js";
 import { extractHandoff } from "../core/HandoffParser.js";
 import { eventBus } from "../core/eventBus.js";
 
+function ensureAgentCommandExists(command: string): void {
+  try {
+    if (process.platform === "win32") {
+      execSync(`where ${command}`, { stdio: "ignore" });
+    } else {
+      execSync(`command -v ${command}`, { stdio: "ignore", shell: "/bin/bash" });
+    }
+  } catch {
+    throw new Error(
+      `Agent CLI command not found: "${command}".\n` +
+        `Install it or update config/agents.yaml -> command for this agent.`
+    );
+  }
+}
+
 export abstract class AgentBase {
   abstract readonly agentKey: string;
 
@@ -18,15 +33,24 @@ export abstract class AgentBase {
     }
 
     this.outputBuffer = "";
-    this.pty = nodePty.spawn(agentConfig.command, agentConfig.args, {
-      name: "xterm-256color",
-      cols: process.stdout.columns ?? 120,
-      rows: process.stdout.rows ?? 40,
-      cwd: process.cwd(),
-      // node-pty requires Record<string,string>; process.env has undefined values.
-      // This cast is safe on macOS/Linux where env values are always strings.
-      env: process.env as Record<string, string>,
-    });
+    ensureAgentCommandExists(agentConfig.command);
+
+    try {
+      this.pty = nodePty.spawn(agentConfig.command, agentConfig.args, {
+        name: "xterm-256color",
+        cols: process.stdout.columns ?? 120,
+        rows: process.stdout.rows ?? 40,
+        cwd: process.cwd(),
+        // node-pty requires Record<string,string>; process.env has undefined values.
+        // This cast is safe on macOS/Linux where env values are always strings.
+        env: process.env as Record<string, string>,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Failed to start agent command "${agentConfig.command}": ${message}`
+      );
+    }
   }
 
   sendTask(instruction: string, handoffContext: string): void {

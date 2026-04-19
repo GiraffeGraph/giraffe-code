@@ -34,7 +34,6 @@ export function makeAgentNode(
     }
 
     const agent = new AgentClass();
-    agent.spawn();
 
     // Emit state update so TUI shows which agent is active
     eventBus.emit("stateUpdate", {
@@ -42,11 +41,22 @@ export function makeAgentNode(
       taskPlan: state.taskPlan,
     });
 
-    agent.sendTask(runningStep.instruction, state.handoffContext);
+    try {
+      agent.spawn();
+      agent.sendTask(runningStep.instruction, state.handoffContext);
 
-    const output = await agent.waitForCompletion();
-    agent.kill();
+      const output = await agent.waitForCompletion();
+      return { liveOutput: output };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const output =
+        `\n[AGENT_ERROR] ${agentKey}: ${message}\n` +
+        `Agent failed before handoff. Trying fallback if configured...\n`;
 
-    return { liveOutput: output };
+      eventBus.emit("output", output);
+      return { liveOutput: output };
+    } finally {
+      agent.kill();
+    }
   };
 }

@@ -75,7 +75,10 @@ export async function getValidToken(providerId: string): Promise<string> {
  */
 export function supportsDirectApi(providerId: string): boolean {
   const cred = getCredential(providerId);
-  return cred !== null;
+  if (cred) return true;
+
+  const envVar = ENV_VARS[providerId];
+  return !!(envVar && process.env[envVar]);
 }
 
 /** Returns the first provider ID that has a resolvable credential for direct API use. */

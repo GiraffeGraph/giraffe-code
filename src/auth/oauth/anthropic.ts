@@ -2,24 +2,17 @@ import type { OAuthCredential } from "../types.js";
 import {
   generateCodeVerifier,
   generateCodeChallenge,
-  generateState,
   openBrowser,
   waitForCallback,
   exchangeCode,
 } from "./pkce.js";
 
-// Reverse-engineered from anthropics/claude-code CLI + open-source implementations
-// (Roo-Code, pi.dev, opencode-anthropic-auth, anthropic-auth Rust crate).
-// AUTH_URL must be claude.ai — client_id 9d1c250a is registered there.
-// `code=true` is a non-standard param required by Anthropic's identity server.
-// TOKEN_URL: console.anthropic.com is used by most working implementations.
+// Mirrors the OAuth flow used in pi-coding-agent's pi-ai implementation.
 const AUTH_URL = "https://claude.ai/oauth/authorize";
-const TOKEN_URL = "https://console.anthropic.com/v1/oauth/token";
+const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
-
-// user:file_upload triggers validation failures on some accounts — omitted.
 const SCOPES =
-  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers";
+  "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 
 const CALLBACK_PORT = 53692;
 const CALLBACK_PATH = "/callback";
@@ -47,30 +40,22 @@ export async function loginAnthropic(
 ): Promise<OAuthCredential> {
   const verifier = generateCodeVerifier();
   const challenge = generateCodeChallenge(verifier);
-  const state = generateState();
 
-  // Build URL with encodeURIComponent — spaces become %20, not +.
-  // code=true is required by Anthropic's identity server for this flow.
-  // Minimal encoding: colons in scope strings MUST stay as `:` (server rejects %3A).
-  // Only encode chars that would break URL structure: space, #, &, +.
-  const encodeParam = (s: string): string =>
-    s.replace(/%/g, "%25").replace(/ /g, "%20").replace(/&/g, "%26")
-     .replace(/\+/g, "%2B").replace(/#/g, "%23");
+  // Keep state identical to verifier for max compatibility with Claude Code style flows.
+  const state = verifier;
 
-  const authUrl =
-    `${AUTH_URL}?` +
-    [
-      ["code", "true"],
-      ["response_type", "code"],
-      ["client_id", CLIENT_ID],
-      ["redirect_uri", encodeParam(REDIRECT_URI)],
-      ["scope", encodeParam(SCOPES)],
-      ["code_challenge", challenge],
-      ["code_challenge_method", "S256"],
-      ["state", state],
-    ]
-      .map(([k, v]) => `${k}=${v}`)
-      .join("&");
+  const params = new URLSearchParams({
+    code: "true",
+    response_type: "code",
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    scope: SCOPES,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state,
+  });
+
+  const authUrl = `${AUTH_URL}?${params.toString()}`;
 
   const callbackPromise = waitForCallback(CALLBACK_PORT, CALLBACK_PATH, state);
 
@@ -85,9 +70,9 @@ export async function loginAnthropic(
     grant_type: "authorization_code",
     client_id: CLIENT_ID,
     code,
+    state,
     redirect_uri: REDIRECT_URI,
     code_verifier: verifier,
-    state,
   });
 
   return buildCredential(

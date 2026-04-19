@@ -1,9 +1,5 @@
 import type { Provider, Context, CompletionOptions, CompletionResult } from "./types.js";
 
-// Uses the OpenAI Responses API (/v1/responses) which is what the Codex CLI
-// uses and supports gpt-5.x models with subscription OAuth tokens.
-// Chat Completions (/v1/chat/completions) does not support these models.
-
 type ResponsesInput = Array<{ role: "user" | "assistant"; content: string }>;
 
 type ResponsesBody = {
@@ -11,17 +7,19 @@ type ResponsesBody = {
   input: ResponsesInput;
   max_output_tokens: number;
   instructions?: string;
-};
-
-type ResponsesOutput = {
-  type: string;
-  role: string;
-  content: Array<{ type: string; text: string }>;
+  stream?: boolean;
+  store?: boolean;
+  text?: { verbosity: "low" | "medium" | "high" };
 };
 
 type ResponsesResult = {
-  output: ResponsesOutput[];
-  model: string;
+  output?: Array<{
+    type: string;
+    role?: string;
+    content?: Array<{ type: string; text?: string }>;
+  }>;
+  output_text?: string;
+  model?: string;
 };
 
 function buildInput(context: Context): { input: ResponsesInput; instructions?: string } {
@@ -36,6 +34,7 @@ function buildInput(context: Context): { input: ResponsesInput; instructions?: s
             .filter((b) => b.type === "text")
             .map((b) => b.text)
             .join("\n");
+
     input.push({ role, content });
   }
 
@@ -43,6 +42,111 @@ function buildInput(context: Context): { input: ResponsesInput; instructions?: s
     input,
     instructions: context.systemPrompt,
   };
+}
+
+function extractAccountId(jwtToken: string): string | undefined {
+  try {
+    const payload = JSON.parse(
+      Buffer.from(jwtToken.split(".")[1] ?? "", "base64url").toString("utf8")
+    ) as Record<string, unknown>;
+
+    const auth = payload["https://api.openai.com/auth"] as
+      | Record<string, unknown>
+      | undefined;
+
+    const fromNested = auth?.["chatgpt_account_id"];
+    if (typeof fromNested === "string" && fromNested.length > 0) {
+      return fromNested;
+    }
+
+    const legacy = payload["https://api.openai.com/auth.chatgpt_account_id"];
+    return typeof legacy === "string" && legacy.length > 0
+      ? legacy
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isLikelySubscriptionToken(token: string): boolean {
+  // OpenAI API keys start with sk-. OAuth access tokens are JWTs.
+  return !token.startsWith("sk-") && token.split(".").length === 3;
+}
+
+function extractText(data: ResponsesResult): string {
+  if (typeof data.output_text === "string" && data.output_text.length > 0) {
+    return data.output_text;
+  }
+
+  return (data.output ?? [])
+    .filter((item) => item.type === "message")
+    .flatMap((item) => item.content ?? [])
+    .filter((c) => c.type === "output_text")
+    .map((c) => c.text ?? "")
+    .join("");
+}
+
+async function completeWithApiKey(
+  model: string,
+  token: string,
+  body: ResponsesBody
+): Promise<ResponsesResult> {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI API error (${response.status}): ${err}`);
+  }
+
+  return (await response.json()) as ResponsesResult;
+}
+
+async function completeWithSubscriptionToken(
+  model: string,
+  token: string,
+  body: ResponsesBody
+): Promise<ResponsesResult> {
+  const accountId = extractAccountId(token);
+  if (!accountId) {
+    throw new Error(
+      "OpenAI OAuth token is missing chatgpt_account_id. Please run: giraffe login"
+    );
+  }
+
+  const codexBody: ResponsesBody = {
+    ...body,
+    model,
+    store: false,
+    stream: false,
+    text: { verbosity: "medium" },
+  };
+
+  const response = await fetch("https://chatgpt.com/backend-api/codex/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "chatgpt-account-id": accountId,
+      "OpenAI-Beta": "responses=experimental",
+      originator: "giraffe",
+    },
+    body: JSON.stringify(codexBody),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`OpenAI Codex API error (${response.status}): ${err}`);
+  }
+
+  return (await response.json()) as ResponsesResult;
 }
 
 export const openaiProvider: Provider = {
@@ -67,29 +171,14 @@ export const openaiProvider: Provider = {
       body.instructions = instructions;
     }
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    const data = isLikelySubscriptionToken(apiKey)
+      ? await completeWithSubscriptionToken(model, apiKey, body)
+      : await completeWithApiKey(model, apiKey, body);
 
-    if (!response.ok) {
-      const err = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${err}`);
-    }
-
-    const data = (await response.json()) as ResponsesResult;
-
-    const text = (data.output ?? [])
-      .filter((item) => item.type === "message")
-      .flatMap((item) => item.content ?? [])
-      .filter((c) => c.type === "output_text")
-      .map((c) => c.text)
-      .join("");
-
-    return { text, providerId: this.id, model: data.model ?? model };
+    return {
+      text: extractText(data),
+      providerId: this.id,
+      model: data.model ?? model,
+    };
   },
 };
