@@ -55,7 +55,7 @@ function translateMessages(context: Context): {
 
 export const geminiProvider: Provider = {
   id: "gemini",
-  defaultModel: "gemini-1.5-flash",
+  defaultModel: "gemini-2.5-flash",
 
   async complete(
     context: Context,

@@ -59,7 +59,7 @@ function translateMessages(context: Context): OpenAIMessage[] {
 
 export const openaiProvider: Provider = {
   id: "openai-codex",
-  defaultModel: "gpt-4o-mini",
+  defaultModel: "gpt-5.4-mini",
 
   async complete(
     context: Context,

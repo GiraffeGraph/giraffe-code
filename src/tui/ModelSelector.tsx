@@ -10,18 +10,24 @@ interface ModelEntry {
 
 const PROVIDER_MODELS: Record<string, ModelEntry[]> = {
   anthropic: [
-    { model: "claude-haiku-4-5", label: "claude-haiku-4-5   — fast, cheap" },
-    { model: "claude-sonnet-4-5", label: "claude-sonnet-4-5  — balanced" },
-    { model: "claude-opus-4-5", label: "claude-opus-4-5    — most capable" },
+    { model: "claude-haiku-4-5-20251001",  label: "claude-haiku-4-5       — fast, cheap   (200K ctx)" },
+    { model: "claude-sonnet-4-5-20250929", label: "claude-sonnet-4-5      — balanced      (200K ctx)" },
+    { model: "claude-sonnet-4-6",          label: "claude-sonnet-4-6      — latest sonnet (1M ctx)" },
+    { model: "claude-opus-4-5-20251101",   label: "claude-opus-4-5        — powerful      (200K ctx)" },
+    { model: "claude-opus-4-7",            label: "claude-opus-4-7        — most capable  (1M ctx)" },
   ],
   "openai-codex": [
-    { model: "gpt-4o-mini", label: "gpt-4o-mini  — fast, cheap" },
-    { model: "gpt-4o", label: "gpt-4o       — balanced" },
+    { model: "gpt-5.4-mini",       label: "gpt-5.4-mini        — fast, cheap   (272K ctx)" },
+    { model: "gpt-5.1-codex-mini", label: "gpt-5.1-codex-mini  — code-focused  (272K ctx)" },
+    { model: "gpt-5.1",            label: "gpt-5.1             — balanced      (272K ctx)" },
+    { model: "gpt-5.4",            label: "gpt-5.4             — capable       (272K ctx)" },
+    { model: "gpt-5.1-codex-max",  label: "gpt-5.1-codex-max   — most capable  (272K ctx)" },
   ],
   gemini: [
-    { model: "gemini-1.5-flash", label: "gemini-1.5-flash  — fast" },
-    { model: "gemini-1.5-pro", label: "gemini-1.5-pro    — capable" },
-    { model: "gemini-2.0-flash", label: "gemini-2.0-flash  — fast, new" },
+    { model: "gemini-2.5-flash",       label: "gemini-2.5-flash        — fast         (1M ctx)" },
+    { model: "gemini-2.5-pro",         label: "gemini-2.5-pro          — capable      (1M ctx)" },
+    { model: "gemini-3-flash-preview", label: "gemini-3-flash-preview  — fast, new    (1M ctx)" },
+    { model: "gemini-3-pro-preview",   label: "gemini-3-pro-preview    — most capable (1M ctx)" },
   ],
 };
 

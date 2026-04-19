@@ -45,7 +45,7 @@ function translateMessages(context: Context): {
 
 export const anthropicProvider: Provider = {
   id: "anthropic",
-  defaultModel: "claude-haiku-4-5",
+  defaultModel: "claude-haiku-4-5-20251001",
 
   async complete(
     context: Context,
