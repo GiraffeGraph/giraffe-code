@@ -1,5 +1,6 @@
 import nodePty from "node-pty";
 import type { IPty } from "node-pty";
+import { execSync } from "child_process";
 import { getConfig } from "../config/loader.js";
 import { extractHandoff } from "../core/HandoffParser.js";
 import { eventBus } from "../core/eventBus.js";

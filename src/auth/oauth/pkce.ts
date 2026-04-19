@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "crypto";
 import { createServer } from "http";
 import { URL } from "url";
-import { exec } from "child_process";
+import { spawn } from "child_process";
 
 // ── PKCE helpers ─────────────────────────────────────────────────────────────
 
@@ -20,14 +20,15 @@ export function generateState(): string {
 // ── Browser open ──────────────────────────────────────────────────────────────
 
 export function openBrowser(url: string): void {
-  const cmd =
+  // Use spawn with array args — avoids shell escaping issues with complex URLs.
+  const [cmd, args] =
     process.platform === "darwin"
-      ? `open "${url}"`
+      ? (["open", [url]] as [string, string[]])
       : process.platform === "win32"
-        ? `start "" "${url}"`
-        : `xdg-open "${url}"`;
+        ? (["cmd", ["/c", "start", "", url]] as [string, string[]])
+        : (["xdg-open", [url]] as [string, string[]]);
 
-  exec(cmd); // fire-and-forget — errors are non-fatal
+  spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
 }
 
 // ── Local OAuth callback server ───────────────────────────────────────────────

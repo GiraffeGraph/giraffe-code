@@ -51,19 +51,25 @@ export async function loginAnthropic(
 
   // Build URL with encodeURIComponent — spaces become %20, not +.
   // code=true is required by Anthropic's identity server for this flow.
+  // Minimal encoding: colons in scope strings MUST stay as `:` (server rejects %3A).
+  // Only encode chars that would break URL structure: space, #, &, +.
+  const encodeParam = (s: string): string =>
+    s.replace(/%/g, "%25").replace(/ /g, "%20").replace(/&/g, "%26")
+     .replace(/\+/g, "%2B").replace(/#/g, "%23");
+
   const authUrl =
     `${AUTH_URL}?` +
     [
       ["code", "true"],
       ["response_type", "code"],
       ["client_id", CLIENT_ID],
-      ["redirect_uri", REDIRECT_URI],
-      ["scope", SCOPES],
+      ["redirect_uri", encodeParam(REDIRECT_URI)],
+      ["scope", encodeParam(SCOPES)],
       ["code_challenge", challenge],
       ["code_challenge_method", "S256"],
       ["state", state],
     ]
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .map(([k, v]) => `${k}=${v}`)
       .join("&");
 
   const callbackPromise = waitForCallback(CALLBACK_PORT, CALLBACK_PATH, state);

@@ -69,18 +69,13 @@ export async function getValidToken(providerId: string): Promise<string> {
 
 /**
  * Returns true if the stored credential for this provider can make
- * direct API calls. OpenAI subscription OAuth tokens (from ChatGPT Plus /
- * Codex CLI login) only authorize the codex binary — not raw API requests.
- * Only API keys work for direct planner calls.
+ * direct API calls (i.e. there is any stored credential to try).
+ * If the token turns out to be invalid, the API call will fail with a
+ * clear error — we don't pre-emptively block based on token type.
  */
 export function supportsDirectApi(providerId: string): boolean {
   const cred = getCredential(providerId);
-  if (!cred) return false;
-  if (cred.type === "api_key") return true;
-  // Anthropic OAuth grants user:inference — direct API access works
-  if (providerId === "anthropic" && cred.type === "oauth") return true;
-  // OpenAI OAuth is a subscription token — direct API calls return 401
-  return false;
+  return cred !== null;
 }
 
 /** Returns the first provider ID that has a resolvable credential for direct API use. */
