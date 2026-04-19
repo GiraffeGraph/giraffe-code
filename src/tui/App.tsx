@@ -1,16 +1,19 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { Box, Text, useInput } from "ink";
+import { Box, useInput } from "ink";
 import { TaskTree } from "./TaskTree.js";
 import { AgentPanel } from "./AgentPanel.js";
 import { StatusBar } from "./StatusBar.js";
 import { InputBox } from "./InputBox.js";
 import { GiraffeHeader } from "./GiraffeHeader.js";
 import { LoginSelector } from "./LoginSelector.js";
+import { ModelSelector } from "./ModelSelector.js";
+import { StatusScreen } from "./StatusScreen.js";
+import { LogoutSelector } from "./LogoutSelector.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import type { TaskStep } from "../types/config.js";
 
-type AppScreen = "login" | "input" | "running";
+type AppScreen = "login" | "input" | "running" | "model" | "status" | "logout";
 
 interface AppProps {
   initialTask: string;
@@ -39,6 +42,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     setStatus("Analyzing task...");
     setOutputLines([]);
     setTaskPlan([]);
+    setCurrentAgent("—");
 
     runGraph(taskToRun)
       .then(() => {
@@ -47,6 +51,18 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       .catch((err: Error) => {
         eventBus.emit("error", err.message);
       });
+  }, []);
+
+  const handleCommand = useCallback((cmd: string) => {
+    if (cmd === "/login") setScreen("login");
+    else if (cmd === "/model") setScreen("model");
+    else if (cmd === "/status") setScreen("status");
+    else if (cmd === "/logout") setScreen("logout");
+  }, []);
+
+  const returnToInput = useCallback(() => {
+    setScreen("input");
+    setStatus("Enter a task to begin");
   }, []);
 
   useEffect(() => {
@@ -78,6 +94,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
 
     const handleError = (message: string): void => {
       setStatus(`Error: ${message}`);
+      setCurrentAgent("—");
       setScreen("input");
     };
 
@@ -108,6 +125,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
   }, []);
 
   useInput((input, key) => {
+    if (screen === "running") return; // agents handle their own input
     if (input === "q" || (key.ctrl && input === "c")) {
       process.exit(0);
     }
@@ -115,18 +133,16 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
 
   const rows = process.stdout.rows ?? 40;
 
-  // ── Login screen ──────────────────────────────────────────────────────────
+  // ── Login ─────────────────────────────────────────────────────────────────
   if (screen === "login") {
     return (
       <Box flexDirection="column" height={rows}>
         <LoginSelector
           onComplete={(_providerId) => {
-            // Login done — proceed to task input or start graph
             if (task) {
               startGraph(task);
             } else {
-              setScreen("input");
-              setStatus("Enter a task to begin");
+              returnToInput();
             }
           }}
         />
@@ -134,7 +150,34 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Task input screen (interactive mode) ──────────────────────────────────
+  // ── Model selector ────────────────────────────────────────────────────────
+  if (screen === "model") {
+    return (
+      <Box flexDirection="column" height={rows}>
+        <ModelSelector onComplete={returnToInput} />
+      </Box>
+    );
+  }
+
+  // ── Status ────────────────────────────────────────────────────────────────
+  if (screen === "status") {
+    return (
+      <Box flexDirection="column" height={rows}>
+        <StatusScreen onDone={returnToInput} />
+      </Box>
+    );
+  }
+
+  // ── Logout ────────────────────────────────────────────────────────────────
+  if (screen === "logout") {
+    return (
+      <Box flexDirection="column" height={rows}>
+        <LogoutSelector onComplete={returnToInput} />
+      </Box>
+    );
+  }
+
+  // ── Task input (interactive mode) ─────────────────────────────────────────
   if (screen === "input") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -145,6 +188,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
               setTask(t);
               startGraph(t);
             }}
+            onCommand={handleCommand}
           />
         </Box>
         <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
@@ -152,12 +196,15 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Main orchestration screen ─────────────────────────────────────────────
+  // ── Orchestration (running) ───────────────────────────────────────────────
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1}>
         <TaskTree plan={taskPlan} />
-        <AgentPanel lines={outputLines} currentAgent={currentAgent !== "—" ? currentAgent : undefined} />
+        <AgentPanel
+          lines={outputLines}
+          currentAgent={currentAgent !== "—" ? currentAgent : undefined}
+        />
       </Box>
       <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
     </Box>
