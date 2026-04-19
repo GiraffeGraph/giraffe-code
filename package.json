@@ -1,6 +1,6 @@
 {
   "name": "giraffe-code",
-  "version": "0.2.16-alpha",
+  "version": "0.2.17-alpha",
   "description": "Hierarchical multi-agent AI orchestration — run Claude, Codex, Gemini and more in sequence from a single CLI",
   "type": "module",
   "bin": {
