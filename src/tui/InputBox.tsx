@@ -10,6 +10,8 @@ const SLASH_COMMANDS = [
   { cmd: "/status", hint: "show auth & config status" },
   { cmd: "/doctor", hint: "run health checks" },
   { cmd: "/resume", hint: "resume from .giraffe/handoffs/latest" },
+  { cmd: "/handoff", hint: "show latest workspace handoff" },
+  { cmd: "/sessions", hint: "list recent workspace sessions" },
   { cmd: "/agents", hint: "list configured agents" },
   { cmd: "/mode", hint: "switch mode: orchestrate | chat | delegate [agent]" },
   { cmd: "/delegate", hint: "run one agent manually: /delegate <agent> <task>" },
@@ -60,6 +62,8 @@ export function InputBox({
           lower.startsWith("/improve ") ||
           lower === "/mode" ||
           lower === "/resume" ||
+          lower === "/handoff" ||
+          lower === "/sessions" ||
           lower.startsWith("/mode ") ||
           lower.startsWith("/delegate ")
         ) {
@@ -129,7 +133,7 @@ export function InputBox({
               </Box>
             ))
           ) : (
-            <Text color="red">Unknown command. Try /resume /mode /delegate /agents /native /improve</Text>
+            <Text color="red">Unknown command. Try /resume /handoff /sessions /mode /delegate</Text>
           )}
         </Box>
       ) : (

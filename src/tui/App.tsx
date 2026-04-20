@@ -17,7 +17,12 @@ import { runGraph } from "../core/GiraffeGraph.js";
 import { runNativeAgentSession } from "../core/nativeMode.js";
 import { buildSelfImproveTask } from "../core/improvePrompt.js";
 import { runChatReply, runDelegateTask, runResumeTask } from "../core/runModes.js";
-import { getWorkspaceConfig, updateWorkspaceConfig } from "../core/workspaceRuntime.js";
+import {
+  getWorkspaceConfig,
+  renderLatestWorkspaceHandoff,
+  listRecentWorkspaceSessions,
+  updateWorkspaceConfig,
+} from "../core/workspaceRuntime.js";
 import type { TaskStep } from "../types/config.js";
 
 type AppScreen =
@@ -282,6 +287,29 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       runResumeTask()
         .then(() => { eventBus.emit("done"); })
         .catch((err: Error) => { eventBus.emit("error", err.message); });
+      return;
+    }
+
+    if (cmd === "/handoff") {
+      setStatus(renderLatestWorkspaceHandoff().split("\n")[0] ?? "No handoff found.");
+      eventBus.emit("output", `\n${renderLatestWorkspaceHandoff()}\n`);
+      return;
+    }
+
+    if (cmd === "/sessions") {
+      const sessions = listRecentWorkspaceSessions(8);
+      if (sessions.length === 0) {
+        setStatus("No .giraffe sessions found yet.");
+        return;
+      }
+
+      eventBus.emit(
+        "output",
+        `\nRecent .giraffe sessions:\n${sessions
+          .map((session) => `- ${session.sessionId}`)
+          .join("\n")}\n`
+      );
+      setStatus(`Listed ${sessions.length} recent sessions.`);
       return;
     }
 

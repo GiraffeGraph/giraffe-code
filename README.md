@@ -44,6 +44,7 @@ Install whichever agents you plan to use:
 ```bash
 npm install -g @anthropic-ai/claude-code   # Claude Code
 npm install -g @openai/codex               # Codex CLI
+npm install -g opencode                    # OpenCode (if installed under this name)
 # pi: see https://pi.ai/cli
 # gemini: see https://ai.google.dev/gemini-api/docs/cli
 ```
@@ -178,6 +179,8 @@ export GIRAFFE_CLAUDE_TRANSPORT=pty
 - `/status`
 - `/doctor`
 - `/resume`
+- `/handoff`
+- `/sessions`
 - `/agents`
 - `/mode`
 - `/mode orchestrate`
@@ -208,7 +211,7 @@ This makes handoffs and agent-session continuity codebase-local instead of only 
 
 ## Configuration — `config/agents.yaml`
 
-This file is the single source of truth for all agent definitions. Edit it to add, remove, or reconfigure agents — no code changes needed.
+This file is the single source of truth for all agent definitions. Edit it to add, remove, or reconfigure agents — no code changes needed. Giraffe now builds worker nodes dynamically from this file.
 
 ```yaml
 agents:
@@ -226,20 +229,15 @@ agents:
 
 ### Adding a New Agent
 
-1. Add an entry to `config/agents.yaml` with the agent's CLI command and handoff prompt
-2. Create `src/agents/MyAgent.ts`:
-   ```typescript
-   import { AgentBase } from "./AgentBase.js";
-   export class MyAgent extends AgentBase {
-     readonly agentKey = "myagent" as const;
-   }
-   ```
-3. Register it in `src/core/agentNodeFactory.ts`:
-   ```typescript
-   import { MyAgent } from "../agents/MyAgent.js";
-   const AGENT_REGISTRY = { ..., myagent: MyAgent };
-   ```
-4. Add it to the graph in `src/core/GiraffeGraph.ts`
+Just add an entry to `config/agents.yaml` with:
+
+- CLI command
+- args
+- handoff prompt
+- strengths
+- optional fallback
+
+That is enough. No graph wiring is needed for normal worker agents.
 
 ---
 
@@ -269,7 +267,7 @@ src/
 │   ├── BabyGiraffeGraph.ts   # Sub-orchestrator subgraph (Phase 4)
 │   ├── HandoffParser.ts      # Parses [GIRAFFE_HANDOFF] blocks
 │   ├── giraffeReply.ts       # Direct Giraffe replies + final summaries
-│   ├── runModes.ts           # Chat/delegate helpers
+│   ├── runModes.ts           # Chat/delegate/resume helpers
 │   ├── workspaceRuntime.ts   # Project-local .giraffe sessions + handoffs
 │   ├── eventBus.ts           # Typed EventEmitter3 for TUI↔graph comms
 │   ├── state.ts              # LangGraph Annotation state definition
@@ -311,7 +309,7 @@ src/
 ## Design Principles
 
 1. **Lightweight first.** Giraffe is a thin orchestrator for other coding CLIs, not a heavy all-in-one IDE.
-2. **Don't break the PTY.** Agent TUIs render intact; Giraffe only watches output and writes to stdin.
+2. **Workers stay external.** Agent TUIs remain their own CLIs; Giraffe watches, delegates, resumes, and hands off.
 3. **Handoff is the standard.** All agents speak the same protocol. Adding a new agent takes 5 minutes.
 4. **Config over code.** Agent definitions live in `agents.yaml`, not hardcoded.
 5. **Human always in the loop.** Switch modes with slash commands, delegate manually when you want, and drop to native UI when needed.

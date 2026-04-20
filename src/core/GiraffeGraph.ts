@@ -1,4 +1,5 @@
 import { StateGraph, START, END } from "@langchain/langgraph";
+import { getConfig } from "../config/loader.js";
 import { GiraffeAnnotation } from "./state.js";
 import { plannerNode } from "./nodes/planner.js";
 import { routerNode, routeDecision } from "./nodes/router.js";
@@ -22,34 +23,42 @@ export interface RunGraphOptions {
   mode?: Extract<WorkspaceMode, "orchestrate" | "delegate">;
 }
 
+function buildConfiguredAgentMap(
+  agentKeys: string[],
+  prefix = ""
+): Record<string, string> {
+  return Object.fromEntries(agentKeys.map((agentKey) => [agentKey, `${prefix}${agentKey}`]));
+}
+
 export function buildGiraffeGraph() {
   const babyGiraffe = buildBabyGiraffeGraph();
+  const agentKeys = Object.keys(getConfig().agents);
+  const graph = new StateGraph(GiraffeAnnotation) as any;
 
-  const graph = new StateGraph(GiraffeAnnotation)
+  graph
     .addNode("planner", plannerNode)
     .addNode("router", routerNode)
-    .addNode("claude", makeAgentNode("claude"))
-    .addNode("codex", makeAgentNode("codex"))
-    .addNode("pi", makeAgentNode("pi"))
-    .addNode("gemini", makeAgentNode("gemini"))
     .addNode("baby_giraffe", babyGiraffe)
-    .addNode("handoff", handoffNode)
+    .addNode("handoff", handoffNode);
+
+  for (const agentKey of agentKeys) {
+    graph.addNode(agentKey, makeAgentNode(agentKey));
+  }
+
+  graph
     .addEdge(START, "planner")
     .addEdge("planner", "router")
     .addConditionalEdges("router", routeDecision, {
-      claude: "claude",
-      codex: "codex",
-      pi: "pi",
-      gemini: "gemini",
+      ...buildConfiguredAgentMap(agentKeys),
       baby_giraffe: "baby_giraffe",
       done: END,
     })
-    .addEdge("claude", "handoff")
-    .addEdge("codex", "handoff")
-    .addEdge("pi", "handoff")
-    .addEdge("gemini", "handoff")
     .addEdge("baby_giraffe", "handoff")
     .addEdge("handoff", "router");
+
+  for (const agentKey of agentKeys) {
+    graph.addEdge(agentKey, "handoff");
+  }
 
   return graph.compile();
 }
@@ -110,9 +119,9 @@ export async function runGraph(
   };
 
   try {
-    const finalState = await graph.invoke(initialState, {
+    const finalState = (await graph.invoke(initialState, {
       recursionLimit: 200,
-    });
+    })) as GiraffeState;
 
     const summary = await summarizeRun(task, finalState);
     appendSessionEvent(session.sessionId, "run.summary", { summary });
@@ -127,7 +136,7 @@ export async function runGraph(
     });
 
     appendSessionEvent(session.sessionId, "session.finished", {
-      status: finalState.taskPlan.some((step) => step.status === "failed") ? "partial" : "done",
+      status: finalState.taskPlan.some((step: TaskStep) => step.status === "failed") ? "partial" : "done",
       completedAgents: finalState.completedAgents,
     });
 

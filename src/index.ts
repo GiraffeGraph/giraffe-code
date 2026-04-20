@@ -12,6 +12,10 @@ import { runNativeAgentSession } from "./core/nativeMode.js";
 import { buildSelfImproveTask } from "./core/improvePrompt.js";
 import { runHeadlessTask } from "./core/headlessRunner.js";
 import { runChatReply, runResumeTask } from "./core/runModes.js";
+import {
+  listRecentWorkspaceSessions,
+  renderLatestWorkspaceHandoff,
+} from "./core/workspaceRuntime.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -27,7 +31,7 @@ if (nodeMajor >= 25 && process.env["GIRAFFE_SUPPRESS_NODE_WARNING"] !== "1") {
   );
 }
 
-const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "chat", "delegate", "resume", "help"] as const;
+const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "chat", "delegate", "resume", "handoff", "sessions", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 
 let command: Command | undefined;
@@ -93,6 +97,8 @@ Commands:
   giraffe chat [message]         Ask Giraffe directly (no delegation)
   giraffe delegate <agent> <task>  Run one agent manually via Giraffe
   giraffe resume                 Resume from .giraffe/handoffs/latest
+  giraffe handoff                Print latest workspace handoff
+  giraffe sessions               List recent .giraffe sessions
   giraffe help                   Show this help
 
 Flags:
@@ -114,6 +120,8 @@ Examples:
   giraffe chat "what should we refactor next?"
   giraffe delegate codex "build a todo app"
   giraffe resume
+  giraffe handoff
+  giraffe sessions
 `);
   process.exit(0);
 }
@@ -309,6 +317,20 @@ if (command === "login") {
         process.stderr.write(`\n[Giraffe Code] Resume failed:\n${message}\n\n`);
         process.exit(1);
       });
+  } else if (command === "handoff") {
+    process.stdout.write(`\n${renderLatestWorkspaceHandoff()}\n`);
+    process.exit(0);
+  } else if (command === "sessions") {
+    const sessions = listRecentWorkspaceSessions(12);
+    if (sessions.length === 0) {
+      process.stdout.write("\nNo .giraffe sessions found yet.\n");
+    } else {
+      process.stdout.write("\nRecent .giraffe sessions:\n");
+      for (const session of sessions) {
+        process.stdout.write(`- ${session.sessionId}  ${session.path}\n`);
+      }
+    }
+    process.exit(0);
   } else if (shouldRunHeadless) {
     if (!initialTask) {
       process.stderr.write(

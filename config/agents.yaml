@@ -49,6 +49,24 @@ agents:
       - bug_fixing
     fallback: claude
 
+  opencode:
+    name: "OpenCode"
+    command: "opencode"
+    args: []
+    handoff_system_prompt: |
+      When you complete your task, you MUST output EXACTLY this block as the very last thing you write:
+      [GIRAFFE_HANDOFF]
+      COMPLETED: <one-line summary of what you accomplished>
+      FILES: <comma-separated list of created/modified files, or "none">
+      CONTEXT: <key facts the next agent needs to know>
+      NEXT_HINT: <optional suggestion for what the next agent should focus on>
+      [/GIRAFFE_HANDOFF]
+    strengths:
+      - rapid_iteration
+      - code_generation
+      - implementation
+    fallback: claude
+
   pi:
     name: "Pi"
     command: "pi"

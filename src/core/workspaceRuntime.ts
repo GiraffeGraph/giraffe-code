@@ -2,6 +2,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from "fs";
@@ -34,6 +35,11 @@ export interface StoredHandoff {
   summary: string;
   agents: AgentOutcome[];
   generatedAt: string;
+}
+
+export interface RecentSession {
+  sessionId: string;
+  path: string;
 }
 
 function safeReadJson<T>(path: string, fallback: T): T {
@@ -194,6 +200,30 @@ export function getLatestWorkspaceHandoff(): StoredHandoff | null {
 
   if (!existsSync(path)) return null;
   return safeReadJson<StoredHandoff | null>(path, null);
+}
+
+export function listRecentWorkspaceSessions(limit = 10): RecentSession[] {
+  const { sessionsDir } = ensureWorkspaceRuntime();
+
+  return readdirSync(sessionsDir)
+    .filter((name) => name.endsWith(".jsonl"))
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, limit)
+    .map((name) => ({
+      sessionId: name.replace(/\.jsonl$/, ""),
+      path: join(sessionsDir, name),
+    }));
+}
+
+export function renderLatestWorkspaceHandoff(): string {
+  const { handoffsDir } = ensureWorkspaceRuntime();
+  const path = join(handoffsDir, "latest.md");
+
+  if (!existsSync(path)) {
+    return "No .giraffe handoff found yet.";
+  }
+
+  return readFileSync(path, "utf8").trim();
 }
 
 export function formatLatestHandoffForAgent(): string {
