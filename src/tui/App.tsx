@@ -16,7 +16,7 @@ import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import { runNativeAgentSession } from "../core/nativeMode.js";
 import { buildSelfImproveTask } from "../core/improvePrompt.js";
-import { runChatReply, runDelegateTask } from "../core/runModes.js";
+import { runChatReply, runDelegateTask, runResumeTask } from "../core/runModes.js";
 import { getWorkspaceConfig, updateWorkspaceConfig } from "../core/workspaceRuntime.js";
 import type { TaskStep } from "../types/config.js";
 
@@ -266,6 +266,22 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       const generated = buildSelfImproveTask(focus);
       setTask(generated);
       startGraph(generated);
+      return;
+    }
+
+    if (cmd === "/resume") {
+      setTask("resume");
+      setScreen("running");
+      setStatus("Resuming from latest .giraffe handoff...");
+      setOutputLines([]);
+      setTaskPlan([]);
+      setCurrentAgent("—");
+      setStepInfo("");
+      setIsBusy(true);
+
+      runResumeTask()
+        .then(() => { eventBus.emit("done"); })
+        .catch((err: Error) => { eventBus.emit("error", err.message); });
       return;
     }
 

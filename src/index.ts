@@ -11,7 +11,7 @@ import { NativeLauncher } from "./tui/NativeLauncher.js";
 import { runNativeAgentSession } from "./core/nativeMode.js";
 import { buildSelfImproveTask } from "./core/improvePrompt.js";
 import { runHeadlessTask } from "./core/headlessRunner.js";
-import { runChatReply } from "./core/runModes.js";
+import { runChatReply, runResumeTask } from "./core/runModes.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -27,7 +27,7 @@ if (nodeMajor >= 25 && process.env["GIRAFFE_SUPPRESS_NODE_WARNING"] !== "1") {
   );
 }
 
-const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "chat", "delegate", "help"] as const;
+const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "chat", "delegate", "resume", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 
 let command: Command | undefined;
@@ -92,6 +92,7 @@ Commands:
   giraffe improve [focus]        Dogfood mode: use Giraffe to improve this repo
   giraffe chat [message]         Ask Giraffe directly (no delegation)
   giraffe delegate <agent> <task>  Run one agent manually via Giraffe
+  giraffe resume                 Resume from .giraffe/handoffs/latest
   giraffe help                   Show this help
 
 Flags:
@@ -112,6 +113,7 @@ Examples:
   giraffe improve --headless "focus on planner reliability"
   giraffe chat "what should we refactor next?"
   giraffe delegate codex "build a todo app"
+  giraffe resume
 `);
   process.exit(0);
 }
@@ -297,6 +299,14 @@ if (command === "login") {
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         process.stderr.write(`\n[Giraffe Code] Delegate run failed:\n${message}\n\n`);
+        process.exit(1);
+      });
+  } else if (command === "resume") {
+    runResumeTask()
+      .then(() => process.exit(0))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`\n[Giraffe Code] Resume failed:\n${message}\n\n`);
         process.exit(1);
       });
   } else if (shouldRunHeadless) {

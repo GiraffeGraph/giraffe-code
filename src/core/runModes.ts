@@ -5,6 +5,7 @@ import {
   appendSessionEvent,
   createWorkspaceSession,
   formatLatestHandoffForAgent,
+  getLatestWorkspaceHandoff,
   writeWorkspaceHandoff,
 } from "./workspaceRuntime.js";
 
@@ -23,6 +24,28 @@ export async function runDelegateTask(agentKey: string, task: string) {
     initialPlan,
     initialHandoffContext: formatLatestHandoffForAgent(),
     mode: "delegate",
+  });
+}
+
+function buildResumeInstruction(task: string): string {
+  return [
+    "Resume the previous workspace task.",
+    "Do not repeat already completed work unless it is necessary.",
+    "Prefer the next unfinished step implied by the latest handoff.",
+    "",
+    `Original task: ${task}`,
+  ].join("\n");
+}
+
+export async function runResumeTask() {
+  const latest = getLatestWorkspaceHandoff();
+  if (!latest?.task) {
+    throw new Error("No resumable .giraffe handoff found yet.");
+  }
+
+  return runGraph(buildResumeInstruction(latest.task), {
+    initialHandoffContext: formatLatestHandoffForAgent(),
+    mode: "orchestrate",
   });
 }
 

@@ -99,6 +99,14 @@ giraffe delegate codex "build a todo app"
 giraffe delegate claude "review the latest handoff and continue"
 ```
 
+### Resume the latest workspace flow
+
+```bash
+giraffe resume
+```
+
+This resumes from `.giraffe/handoffs/latest` and asks Giraffe to continue instead of starting blind.
+
 ### Dogfood mode (let Giraffe improve this repo)
 
 ```bash
@@ -169,6 +177,7 @@ export GIRAFFE_CLAUDE_TRANSPORT=pty
 - `/model`
 - `/status`
 - `/doctor`
+- `/resume`
 - `/agents`
 - `/mode`
 - `/mode orchestrate`
@@ -301,7 +310,7 @@ src/
 
 ## Design Principles
 
-1. **Lightweight first.** Zero bloat — every dependency earns its place.
+1. **Lightweight first.** Giraffe is a thin orchestrator for other coding CLIs, not a heavy all-in-one IDE.
 2. **Don't break the PTY.** Agent TUIs render intact; Giraffe only watches output and writes to stdin.
 3. **Handoff is the standard.** All agents speak the same protocol. Adding a new agent takes 5 minutes.
 4. **Config over code.** Agent definitions live in `agents.yaml`, not hardcoded.
