@@ -10,3 +10,11 @@ dist
 # Environment / secrets
 .env
 .env.*
+
+# Swift / Xcode
+GiraffeCodeApp/.build/
+GiraffeCodeApp/.swiftpm/
+GiraffeCodeApp/*.xcodeproj/
+GiraffeCodeApp/*.xcworkspace/
+GiraffeCodeApp/DerivedData/
+
