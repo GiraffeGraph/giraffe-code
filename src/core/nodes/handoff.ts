@@ -27,6 +27,13 @@ export function handoffNode(state: GiraffeState): Partial<GiraffeState> {
       taskPlan: updatedPlan,
       handoffContext,
       completedAgents: [runningStep.agent],
+      agentOutcomes: [
+        {
+          agent: runningStep.agent,
+          status: "done",
+          ...handoffData,
+        },
+      ],
       liveOutput: "",
       lastAgentFailed: false,
     };
@@ -78,6 +85,18 @@ export function handoffNode(state: GiraffeState): Partial<GiraffeState> {
 
   const nextState: Partial<GiraffeState> = {
     taskPlan: updatedPlan,
+    agentOutcomes: [
+      {
+        agent: runningStep.agent,
+        status: "failed",
+        completed: "Agent exited without a valid GIRAFFE_HANDOFF block.",
+        files: [],
+        context: "",
+        nextHint: agentConf?.fallback
+          ? `Retry with fallback agent ${agentConf.fallback}`
+          : "Inspect agent output and re-run manually.",
+      },
+    ],
     liveOutput: "",
     lastAgentFailed: false,
   };

@@ -1,6 +1,12 @@
 # 🦒 Giraffe Code
 
-Hierarchical multi-agent orchestration for AI coding tools. Give one task, get all your agents working in sequence — live-streamed in a single terminal.
+Hierarchical multi-agent orchestration for AI coding tools. Giraffe can now operate in three modes:
+
+- **orchestrate** — plan and delegate across agents
+- **chat** — reply directly as Giraffe
+- **delegate** — manually send a task to one agent without using the planner
+
+Everything is tracked in a project-local `.giraffe/` runtime folder.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -80,6 +86,19 @@ npm run dev -- "Add an auth system, write tests, document it"
 npm run dev
 ```
 
+### Direct chat mode (no delegation)
+
+```bash
+giraffe chat "what should we refactor next?"
+```
+
+### Manual delegation
+
+```bash
+giraffe delegate codex "build a todo app"
+giraffe delegate claude "review the latest handoff and continue"
+```
+
 ### Dogfood mode (let Giraffe improve this repo)
 
 ```bash
@@ -139,7 +158,8 @@ export GIRAFFE_CLAUDE_TRANSPORT=pty
 
 | Key | Action |
 |-----|--------|
-| `q` | Quit |
+| `q` | Quit a running orchestration |
+| `Enter` | After a run finishes, return to input mode |
 | `Ctrl+C` | Force quit |
 
 ## Slash Commands (Interactive)
@@ -149,9 +169,31 @@ export GIRAFFE_CLAUDE_TRANSPORT=pty
 - `/model`
 - `/status`
 - `/doctor`
+- `/agents`
+- `/mode`
+- `/mode orchestrate`
+- `/mode chat`
+- `/mode delegate <agent>`
+- `/delegate <agent> <task>`
 - `/native` (or `/native <agent> <task>`)
 - `/improve` (or `/improve <focus>`)
 
+### `.giraffe/` workspace runtime
+
+Giraffe now creates a project-local `.giraffe/` folder similar in spirit to `.claude/`.
+
+```text
+.giraffe/
+├── README.md
+├── config.json            # local mode + delegate defaults
+├── sessions/*.jsonl       # append-only session/event logs
+└── handoffs/
+    ├── latest.md
+    ├── latest.json
+    └── <session-id>.md|json
+```
+
+This makes handoffs and agent-session continuity codebase-local instead of only user-local.
 
 ---
 
@@ -205,7 +247,7 @@ NEXT_HINT: Write tests for middleware edge cases, especially token expiry
 [/GIRAFFE_HANDOFF]
 ```
 
-Giraffe parses this block and forwards the context to the next agent automatically.
+Giraffe parses this block and forwards the context to the next agent automatically. The latest normalized handoff is also written to `.giraffe/handoffs/latest.{md,json}`, so manual delegate runs can continue from the latest workspace context.
 
 ---
 
@@ -217,6 +259,9 @@ src/
 │   ├── GiraffeGraph.ts       # Root LangGraph StateGraph
 │   ├── BabyGiraffeGraph.ts   # Sub-orchestrator subgraph (Phase 4)
 │   ├── HandoffParser.ts      # Parses [GIRAFFE_HANDOFF] blocks
+│   ├── giraffeReply.ts       # Direct Giraffe replies + final summaries
+│   ├── runModes.ts           # Chat/delegate helpers
+│   ├── workspaceRuntime.ts   # Project-local .giraffe sessions + handoffs
 │   ├── eventBus.ts           # Typed EventEmitter3 for TUI↔graph comms
 │   ├── state.ts              # LangGraph Annotation state definition
 │   └── nodes/
@@ -260,4 +305,4 @@ src/
 2. **Don't break the PTY.** Agent TUIs render intact; Giraffe only watches output and writes to stdin.
 3. **Handoff is the standard.** All agents speak the same protocol. Adding a new agent takes 5 minutes.
 4. **Config over code.** Agent definitions live in `agents.yaml`, not hardcoded.
-5. **Human always in the loop.** Press `q` at any point to exit.
+5. **Human always in the loop.** Switch modes with slash commands, delegate manually when you want, and drop to native UI when needed.

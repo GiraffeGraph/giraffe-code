@@ -1,6 +1,11 @@
 import { execFileSync, spawnSync } from "child_process";
 import { getConfig } from "../config/loader.js";
 import { getUserConfig, setUserConfig } from "../config/userConfig.js";
+import {
+  appendSessionEvent,
+  createWorkspaceSession,
+  writeWorkspaceHandoff,
+} from "./workspaceRuntime.js";
 
 function commandExists(command: string): boolean {
   try {
@@ -102,6 +107,18 @@ export function runNativeAgentSession(commandArgs: string[]): number {
     },
   });
 
+  const session = createWorkspaceSession({
+    mode: "native",
+    task: task || `Native ${agentKey} session`,
+    agent: agentKey,
+  });
+
+  appendSessionEvent(session.sessionId, "native.started", {
+    agent: agentKey,
+    command: agent.command,
+    args,
+  });
+
   process.stdout.write(
     `\n🦒 Native mode → ${agent.name} (${agent.command})\n` +
       `${task ? `Task: ${task}\n` : ""}` +
@@ -115,8 +132,35 @@ export function runNativeAgentSession(commandArgs: string[]): number {
   });
 
   if (result.error) {
+    appendSessionEvent(session.sessionId, "session.finished", {
+      status: "error",
+      error: result.error.message,
+    });
     throw result.error;
   }
 
-  return result.status ?? 0;
+  const exitCode = result.status ?? 0;
+
+  appendSessionEvent(session.sessionId, "native.finished", {
+    agent: agentKey,
+    exitCode,
+  });
+  appendSessionEvent(session.sessionId, "session.finished", {
+    status: exitCode === 0 ? "done" : "partial",
+    exitCode,
+  });
+
+  writeWorkspaceHandoff({
+    sessionId: session.sessionId,
+    mode: "native",
+    task: task || `Native ${agentKey} session`,
+    summary:
+      exitCode === 0
+        ? `${agent.name} native session ended cleanly.`
+        : `${agent.name} native session exited with code ${exitCode}.`,
+    agents: [],
+    generatedAt: new Date().toISOString(),
+  });
+
+  return exitCode;
 }

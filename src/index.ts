@@ -11,6 +11,7 @@ import { NativeLauncher } from "./tui/NativeLauncher.js";
 import { runNativeAgentSession } from "./core/nativeMode.js";
 import { buildSelfImproveTask } from "./core/improvePrompt.js";
 import { runHeadlessTask } from "./core/headlessRunner.js";
+import { runChatReply } from "./core/runModes.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
@@ -26,7 +27,7 @@ if (nodeMajor >= 25 && process.env["GIRAFFE_SUPPRESS_NODE_WARNING"] !== "1") {
   );
 }
 
-const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "help"] as const;
+const COMMANDS = ["login", "model", "status", "logout", "doctor", "native", "improve", "chat", "delegate", "help"] as const;
 type Command = (typeof COMMANDS)[number];
 
 let command: Command | undefined;
@@ -58,7 +59,15 @@ const commandArg = commandArgs[0];
 
 const task = taskParts.join(" ").trim();
 const improveFocus = command === "improve" ? commandArgs.join(" ").trim() : "";
-const initialTask = command === "improve" ? buildSelfImproveTask(improveFocus) : task;
+const delegateAgentArg = command === "delegate" ? (commandArgs[0] ?? "") : "";
+const delegateTask = command === "delegate" ? commandArgs.slice(1).join(" ").trim() : "";
+const initialTask = command === "improve"
+  ? buildSelfImproveTask(improveFocus)
+  : command === "chat"
+    ? commandArgs.join(" ").trim()
+    : command === "delegate"
+      ? delegateTask
+      : task;
 const isInteractiveTty = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 const shouldRunHeadless = forceHeadless || !isInteractiveTty;
 
@@ -81,6 +90,8 @@ Commands:
   giraffe native                 Open native launcher (agent picker + presets)
   giraffe native [agent] [task]  Launch real agent UI (1:1 terminal handover)
   giraffe improve [focus]        Dogfood mode: use Giraffe to improve this repo
+  giraffe chat [message]         Ask Giraffe directly (no delegation)
+  giraffe delegate <agent> <task>  Run one agent manually via Giraffe
   giraffe help                   Show this help
 
 Flags:
@@ -99,6 +110,8 @@ Examples:
   giraffe improve
   giraffe improve "focus on onboarding UX and docs"
   giraffe improve --headless "focus on planner reliability"
+  giraffe chat "what should we refactor next?"
+  giraffe delegate codex "build a todo app"
 `);
   process.exit(0);
 }
@@ -255,7 +268,38 @@ if (command === "login") {
 } else {
   const needsLogin = !hasAnyCredential();
 
-  if (shouldRunHeadless) {
+  if (command === "chat") {
+    if (!initialTask) {
+      process.stderr.write("\n[Giraffe Code] Chat mode requires a message.\n\n");
+      process.exit(1);
+    }
+
+    runChatReply(initialTask)
+      .then((reply) => {
+        process.stdout.write(`\n🦒 ${reply}\n`);
+        process.exit(0);
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`\n[Giraffe Code] Chat failed:\n${message}\n\n`);
+        process.exit(1);
+      });
+  } else if (command === "delegate") {
+    if (!delegateAgentArg || !delegateTask) {
+      process.stderr.write(
+        "\n[Giraffe Code] Delegate mode usage: giraffe delegate <agent> <task>\n\n"
+      );
+      process.exit(1);
+    }
+
+    runHeadlessTask(delegateTask, { delegateAgent: delegateAgentArg })
+      .then((code) => process.exit(code))
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`\n[Giraffe Code] Delegate run failed:\n${message}\n\n`);
+        process.exit(1);
+      });
+  } else if (shouldRunHeadless) {
     if (!initialTask) {
       process.stderr.write(
         "\n[Giraffe Code] Non-interactive mode requires a task.\n" +

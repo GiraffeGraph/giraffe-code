@@ -1,5 +1,5 @@
 import { Annotation } from "@langchain/langgraph";
-import type { TaskStep } from "../types/config.js";
+import type { HandoffData, TaskStep } from "../types/config.js";
 
 export type BabyGiraffeEntry = {
   id: string;
@@ -7,10 +7,23 @@ export type BabyGiraffeEntry = {
   status: "pending" | "running" | "done";
 };
 
+export type AgentOutcome = HandoffData & {
+  agent: string;
+  status: "done" | "failed";
+};
+
 export const GiraffeAnnotation = Annotation.Root({
   task: Annotation<string>({
     reducer: (_prev: string, next: string) => next,
     default: () => "",
+  }),
+  sessionId: Annotation<string | undefined>({
+    reducer: (_prev: string | undefined, next: string | undefined) => next,
+    default: () => undefined,
+  }),
+  executionMode: Annotation<"orchestrate" | "delegate">({
+    reducer: (_prev: "orchestrate" | "delegate", next: "orchestrate" | "delegate") => next,
+    default: () => "orchestrate",
   }),
   taskPlan: Annotation<TaskStep[]>({
     reducer: (_prev: TaskStep[], next: TaskStep[]) => next,
@@ -22,6 +35,10 @@ export const GiraffeAnnotation = Annotation.Root({
   }),
   completedAgents: Annotation<string[]>({
     reducer: (prev: string[], next: string[]) => [...prev, ...next],
+    default: () => [],
+  }),
+  agentOutcomes: Annotation<AgentOutcome[]>({
+    reducer: (prev: AgentOutcome[], next: AgentOutcome[]) => [...prev, ...next],
     default: () => [],
   }),
   currentAgent: Annotation<string | undefined>({

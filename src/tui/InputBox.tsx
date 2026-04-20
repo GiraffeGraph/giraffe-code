@@ -1,23 +1,41 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 
+type InteractiveMode = "orchestrate" | "chat" | "delegate";
+
 const SLASH_COMMANDS = [
-  { cmd: "/login",  hint: "authenticate with a provider" },
+  { cmd: "/login", hint: "authenticate with a provider" },
   { cmd: "/logout", hint: "remove saved credentials" },
-  { cmd: "/model",  hint: "choose planner model" },
+  { cmd: "/model", hint: "choose planner model" },
   { cmd: "/status", hint: "show auth & config status" },
   { cmd: "/doctor", hint: "run health checks" },
+  { cmd: "/agents", hint: "list configured agents" },
+  { cmd: "/mode", hint: "switch mode: orchestrate | chat | delegate [agent]" },
+  { cmd: "/delegate", hint: "run one agent manually: /delegate <agent> <task>" },
   { cmd: "/native", hint: "open native launcher or run /native <agent> <task>" },
-  { cmd: "/improve", hint: "dogfood mode: improve this repo (optional focus)" }
+  { cmd: "/improve", hint: "dogfood mode: improve this repo (optional focus)" },
 ];
 
 interface InputBoxProps {
   onSubmit: (task: string) => void;
   onCommand: (cmd: string) => void;
   lastStatus?: string;
+  mode: InteractiveMode;
+  delegateAgent: string;
 }
 
-export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): React.ReactElement {
+function modeLabel(mode: InteractiveMode, delegateAgent: string): string {
+  if (mode === "delegate") return `delegate:${delegateAgent}`;
+  return mode;
+}
+
+export function InputBox({
+  onSubmit,
+  onCommand,
+  lastStatus,
+  mode,
+  delegateAgent,
+}: InputBoxProps): React.ReactElement {
   const [value, setValue] = useState("");
 
   const isSlash = value.startsWith("/");
@@ -34,12 +52,14 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
       if (trimmed.startsWith("/")) {
         const lower = trimmed.toLowerCase();
 
-        // /native and /improve support inline args
         if (
           lower === "/native" ||
           lower.startsWith("/native ") ||
           lower === "/improve" ||
-          lower.startsWith("/improve ")
+          lower.startsWith("/improve ") ||
+          lower === "/mode" ||
+          lower.startsWith("/mode ") ||
+          lower.startsWith("/delegate ")
         ) {
           setValue("");
           onCommand(trimmed);
@@ -52,10 +72,11 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
           setValue("");
           onCommand(match.cmd);
         }
-        // Unknown command: stay, let user see the no-match state
-      } else {
-        onSubmit(trimmed);
+        return;
       }
+
+      setValue("");
+      onSubmit(trimmed);
       return;
     }
 
@@ -82,8 +103,8 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
   return (
     <Box flexDirection="column" paddingLeft={1} paddingTop={1}>
       <Text bold color="yellow">🦒 GIRAFFE CODE — Interactive Mode</Text>
+      <Text dimColor>Mode: {modeLabel(mode, delegateAgent)}</Text>
 
-      {/* Show last error with fix hint */}
       {isError && lastStatus && (
         <Box marginTop={1}>
           <Text color="red">{lastStatus}</Text>
@@ -96,7 +117,6 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
         <Text color="gray">█</Text>
       </Box>
 
-      {/* Slash command autocomplete */}
       {isSlash ? (
         <Box flexDirection="column" marginTop={1} paddingLeft={2}>
           {matches.length > 0 ? (
@@ -107,12 +127,15 @@ export function InputBox({ onSubmit, onCommand, lastStatus }: InputBoxProps): Re
               </Box>
             ))
           ) : (
-            <Text color="red">Unknown command. Available: /login /logout /model /status /doctor /native /improve</Text>
+            <Text color="red">Unknown command. Try /mode /delegate /agents /native /improve</Text>
           )}
         </Box>
       ) : (
-        <Box marginTop={1}>
+        <Box marginTop={1} flexDirection="column">
           <Text dimColor>/ for commands   Tab autocomplete   Esc clear   Ctrl+C quit</Text>
+          <Text dimColor>
+            Enter will {mode === "chat" ? "ask Giraffe directly" : mode === "delegate" ? `delegate to ${delegateAgent}` : "run orchestration"}
+          </Text>
         </Box>
       )}
     </Box>

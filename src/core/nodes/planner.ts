@@ -201,6 +201,10 @@ function sanitizePlanAgents(
 export async function plannerNode(
   state: GiraffeState
 ): Promise<Partial<GiraffeState>> {
+  if (state.taskPlan.length > 0) {
+    return { taskPlan: state.taskPlan };
+  }
+
   const config = getConfig();
   const { providerId, model } = await resolvePlannerProvider();
 

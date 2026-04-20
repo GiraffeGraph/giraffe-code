@@ -1,0 +1,6 @@
+config.json
+sessions/*.jsonl
+handoffs/*.json
+handoffs/*.md
+!.gitignore
+!README.md

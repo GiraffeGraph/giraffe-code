@@ -1,5 +1,6 @@
 import { eventBus } from "./eventBus.js";
 import { runGraph } from "./GiraffeGraph.js";
+import { runDelegateTask } from "./runModes.js";
 import type { TaskStep } from "../types/config.js";
 
 function printPlan(plan: TaskStep[]): void {
@@ -14,7 +15,14 @@ function printPlan(plan: TaskStep[]): void {
   process.stdout.write("\n");
 }
 
-export async function runHeadlessTask(task: string): Promise<number> {
+export interface HeadlessRunOptions {
+  delegateAgent?: string;
+}
+
+export async function runHeadlessTask(
+  task: string,
+  options: HeadlessRunOptions = {}
+): Promise<number> {
   let planPrinted = false;
   let currentAgent = "";
 
@@ -54,7 +62,13 @@ export async function runHeadlessTask(task: string): Promise<number> {
 
   try {
     process.stdout.write("\n🦒 Giraffe headless mode started\n");
-    await runGraph(task);
+
+    if (options.delegateAgent) {
+      await runDelegateTask(options.delegateAgent, task);
+    } else {
+      await runGraph(task);
+    }
+
     process.stdout.write("\n✅ Giraffe headless run completed\n");
     return 0;
   } catch {

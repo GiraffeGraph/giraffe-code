@@ -11,10 +11,13 @@ import { StatusScreen } from "./StatusScreen.js";
 import { LogoutSelector } from "./LogoutSelector.js";
 import { DoctorScreen } from "./DoctorScreen.js";
 import { NativeLauncher } from "./NativeLauncher.js";
+import { getConfig } from "../config/loader.js";
 import { eventBus } from "../core/eventBus.js";
 import { runGraph } from "../core/GiraffeGraph.js";
 import { runNativeAgentSession } from "../core/nativeMode.js";
 import { buildSelfImproveTask } from "../core/improvePrompt.js";
+import { runChatReply, runDelegateTask } from "../core/runModes.js";
+import { getWorkspaceConfig, updateWorkspaceConfig } from "../core/workspaceRuntime.js";
 import type { TaskStep } from "../types/config.js";
 
 type AppScreen =
@@ -27,12 +30,13 @@ type AppScreen =
   | "doctor"
   | "native_launcher";
 
+type InteractiveMode = "orchestrate" | "chat" | "delegate";
+
 interface AppProps {
   initialTask: string;
   needsLogin: boolean;
 }
 
-// Parse "Provider API error (500): {"error":{"message":"..."}}}" → clean string
 function parseApiError(msg: string): string {
   const jsonMatch = msg.match(/:\s*(\{[\s\S]*\})\s*$/);
   if (!jsonMatch) return msg;
@@ -42,7 +46,9 @@ function parseApiError(msg: string): string {
     };
     const apiMsg = parsed?.error?.message;
     if (apiMsg) return msg.replace(jsonMatch[0], `: ${apiMsg}`);
-  } catch { /* use original */ }
+  } catch {
+    // use original
+  }
   return msg;
 }
 
@@ -58,10 +64,28 @@ function parseInlineArgs(input: string): string[] {
   return result;
 }
 
+function resolveInteractiveMode(): InteractiveMode {
+  const saved = getWorkspaceConfig().defaultMode;
+  if (saved === "chat" || saved === "delegate") return saved;
+  return "orchestrate";
+}
+
+function resolveDelegateAgent(): string {
+  const config = getConfig();
+  const knownAgents = Object.keys(config.agents);
+  const saved = getWorkspaceConfig().defaultDelegateAgent;
+
+  if (saved && knownAgents.includes(saved)) return saved;
+  if (knownAgents.includes("claude")) return "claude";
+  return knownAgents[0] ?? "claude";
+}
+
 export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
   const [screen, setScreen] = useState<AppScreen>(
     needsLogin ? "login" : initialTask ? "running" : "input"
   );
+  const [mode, setMode] = useState<InteractiveMode>(resolveInteractiveMode);
+  const [delegateAgent, setDelegateAgent] = useState<string>(resolveDelegateAgent);
   const [task, setTask] = useState(initialTask);
   const [outputLines, setOutputLines] = useState<string[]>([]);
   const [taskPlan, setTaskPlan] = useState<TaskStep[]>([]);
@@ -74,6 +98,14 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
         : "Enter a task to begin"
   );
   const [stepInfo, setStepInfo] = useState<string>("");
+  const [isBusy, setIsBusy] = useState<boolean>(Boolean(initialTask));
+
+  const persistWorkspaceMode = useCallback((nextMode: InteractiveMode, nextDelegateAgent?: string) => {
+    updateWorkspaceConfig({
+      defaultMode: nextMode,
+      ...(nextDelegateAgent ? { defaultDelegateAgent: nextDelegateAgent } : {}),
+    });
+  }, []);
 
   const startGraph = useCallback((taskToRun: string) => {
     setScreen("running");
@@ -81,9 +113,67 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     setOutputLines([]);
     setTaskPlan([]);
     setCurrentAgent("—");
+    setIsBusy(true);
 
     runGraph(taskToRun)
       .then(() => { eventBus.emit("done"); })
+      .catch((err: Error) => { eventBus.emit("error", err.message); });
+  }, []);
+
+  const startDelegate = useCallback((agentKey: string, taskToRun: string) => {
+    setScreen("running");
+    setStatus(`Delegating directly to ${agentKey}...`);
+    setOutputLines([]);
+    setTaskPlan([
+      {
+        agent: agentKey,
+        instruction: taskToRun,
+        status: "pending",
+        requiresSubOrchestration: false,
+        retried: false,
+      },
+    ]);
+    setCurrentAgent(agentKey);
+    setIsBusy(true);
+
+    runDelegateTask(agentKey, taskToRun)
+      .then(() => { eventBus.emit("done"); })
+      .catch((err: Error) => { eventBus.emit("error", err.message); });
+  }, []);
+
+  const startChat = useCallback((message: string) => {
+    setScreen("running");
+    setStatus("Giraffe is thinking...");
+    setOutputLines([]);
+    setTaskPlan([
+      {
+        agent: "giraffe",
+        instruction: message,
+        status: "running",
+        requiresSubOrchestration: false,
+        retried: false,
+      },
+    ]);
+    setCurrentAgent("giraffe");
+    setStepInfo("Reply mode");
+    setIsBusy(true);
+
+    runChatReply(message)
+      .then((reply) => {
+        eventBus.emit("output", `\n🦒 ${reply}\n`);
+        setTaskPlan([
+          {
+            agent: "giraffe",
+            instruction: message,
+            status: "done",
+            requiresSubOrchestration: false,
+            retried: false,
+          },
+        ]);
+        setStatus("Giraffe replied. Press Enter for a new task.");
+        setCurrentAgent("—");
+        setIsBusy(false);
+      })
       .catch((err: Error) => { eventBus.emit("error", err.message); });
   }, []);
 
@@ -91,7 +181,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     setStatus("Launching native agent UI...");
 
     try {
-      // Clear current Ink frame before handing terminal to agent UI.
       process.stdout.write("\x1Bc");
       const code = runNativeAgentSession(args);
       setStatus(
@@ -108,8 +197,25 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
 
     setCurrentAgent("—");
     setStepInfo("");
+    setIsBusy(false);
     setScreen("input");
   }, []);
+
+  const handleSubmit = useCallback((nextTask: string) => {
+    setTask(nextTask);
+
+    if (mode === "chat") {
+      startChat(nextTask);
+      return;
+    }
+
+    if (mode === "delegate") {
+      startDelegate(delegateAgent, nextTask);
+      return;
+    }
+
+    startGraph(nextTask);
+  }, [delegateAgent, mode, startChat, startDelegate, startGraph]);
 
   const handleCommand = useCallback((cmd: string) => {
     if (cmd === "/login") {
@@ -160,12 +266,91 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       const generated = buildSelfImproveTask(focus);
       setTask(generated);
       startGraph(generated);
+      return;
     }
-  }, [launchNative, startGraph]);
+
+    if (cmd === "/agents") {
+      const list = Object.keys(getConfig().agents).join(", ");
+      setStatus(`Available agents: ${list}`);
+      return;
+    }
+
+    if (cmd === "/mode") {
+      const suffix = mode === "delegate" ? ` (${delegateAgent})` : "";
+      setStatus(`Current mode: ${mode}${suffix}. Use /mode orchestrate | chat | delegate [agent]`);
+      return;
+    }
+
+    if (cmd.startsWith("/mode ")) {
+      const [, rawMode = "", rawAgent = ""] = parseInlineArgs(cmd);
+      const requestedMode = rawMode.toLowerCase();
+      const knownAgents = Object.keys(getConfig().agents);
+
+      if (["orchestrate", "auto"].includes(requestedMode)) {
+        setMode("orchestrate");
+        persistWorkspaceMode("orchestrate", delegateAgent);
+        setStatus("Mode switched to orchestrate.");
+        return;
+      }
+
+      if (["chat", "giraffe", "reply"].includes(requestedMode)) {
+        setMode("chat");
+        persistWorkspaceMode("chat", delegateAgent);
+        setStatus("Mode switched to chat. Giraffe will answer directly.");
+        return;
+      }
+
+      if (requestedMode === "delegate") {
+        const nextAgent = rawAgent || delegateAgent;
+        if (!knownAgents.includes(nextAgent)) {
+          setStatus(`Unknown delegate agent: ${nextAgent}. Try /agents.`);
+          return;
+        }
+
+        setMode("delegate");
+        setDelegateAgent(nextAgent);
+        persistWorkspaceMode("delegate", nextAgent);
+        setStatus(`Mode switched to delegate (${nextAgent}).`);
+        return;
+      }
+
+      setStatus("Unknown mode. Use /mode orchestrate | chat | delegate [agent]");
+      return;
+    }
+
+    if (cmd === "/delegate") {
+      setStatus("Usage: /delegate <agent> <task>");
+      return;
+    }
+
+    if (cmd.startsWith("/delegate ")) {
+      const parts = parseInlineArgs(cmd);
+      const agentKey = parts[1] ?? "";
+      const taskParts = parts.slice(2);
+      const taskToRun = taskParts.join(" ").trim();
+      const knownAgents = Object.keys(getConfig().agents);
+
+      if (!knownAgents.includes(agentKey)) {
+        setStatus(`Unknown agent: ${agentKey || "(missing)"}. Try /agents.`);
+        return;
+      }
+
+      if (!taskToRun) {
+        setStatus("Usage: /delegate <agent> <task>");
+        return;
+      }
+
+      setTask(taskToRun);
+      startDelegate(agentKey, taskToRun);
+    }
+  }, [delegateAgent, launchNative, mode, persistWorkspaceMode, startDelegate, startGraph]);
 
   const returnToInput = useCallback(() => {
     setScreen("input");
     setStatus("Enter a task to begin");
+    setCurrentAgent("—");
+    setStepInfo("");
+    setIsBusy(false);
   }, []);
 
   useEffect(() => {
@@ -189,7 +374,7 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
         const done = plan.filter(
           (p) => p.status === "done" || p.status === "failed"
         ).length;
-        setStepInfo(total > 0 ? `Step ${done + 1} of ${total}` : "");
+        setStepInfo(total > 0 ? `Step ${Math.min(done + 1, total)} of ${total}` : "");
       }
 
       if (typeof s["currentAgent"] === "string") {
@@ -217,11 +402,14 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
       setStatus(`${truncated}  →  ${hint}`);
       setCurrentAgent("—");
       setStepInfo("");
+      setIsBusy(false);
       setScreen("input");
     };
 
     const handleDone = (): void => {
-      setStatus("All tasks complete!");
+      setStatus("All tasks complete! Press Enter for a new task.");
+      setCurrentAgent("—");
+      setIsBusy(false);
       setStepInfo("");
     };
 
@@ -245,15 +433,16 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // q quits ONLY in running mode — never intercept it while InputBox is active
   useInput((input, key) => {
     if (key.ctrl && input === "c") process.exit(0);
-    if (screen === "running" && input === "q") process.exit(0);
+    if (screen === "running" && isBusy && input === "q") process.exit(0);
+    if (screen === "running" && !isBusy && key.return) {
+      returnToInput();
+    }
   });
 
   const rows = process.stdout.rows ?? 40;
 
-  // ── Login ─────────────────────────────────────────────────────────────────
   if (screen === "login") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -267,7 +456,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Model selector ────────────────────────────────────────────────────────
   if (screen === "model") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -276,7 +464,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Status ────────────────────────────────────────────────────────────────
   if (screen === "status") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -285,7 +472,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Logout ────────────────────────────────────────────────────────────────
   if (screen === "logout") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -294,7 +480,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Doctor ────────────────────────────────────────────────────────────────
   if (screen === "doctor") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -303,7 +488,6 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Native launcher ───────────────────────────────────────────────────────
   if (screen === "native_launcher") {
     return (
       <Box flexDirection="column" height={rows}>
@@ -315,24 +499,31 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
     );
   }
 
-  // ── Task input (interactive mode) ─────────────────────────────────────────
   if (screen === "input") {
     return (
       <Box flexDirection="column" height={rows}>
         <GiraffeHeader />
         <Box flexGrow={1}>
           <InputBox
-            onSubmit={(t) => { setTask(t); startGraph(t); }}
+            onSubmit={handleSubmit}
             onCommand={handleCommand}
             lastStatus={status}
+            mode={mode}
+            delegateAgent={delegateAgent}
           />
         </Box>
-        <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
+        <StatusBar
+          currentAgent={currentAgent}
+          status={status}
+          stepInfo={stepInfo}
+          mode={mode}
+          delegateAgent={delegateAgent}
+          isBusy={false}
+        />
       </Box>
     );
   }
 
-  // ── Orchestration (running) ───────────────────────────────────────────────
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexGrow={1}>
@@ -342,9 +533,16 @@ export function App({ initialTask, needsLogin }: AppProps): React.ReactElement {
           currentAgent={currentAgent !== "—" ? currentAgent : undefined}
         />
       </Box>
-      <StatusBar currentAgent={currentAgent} status={status} stepInfo={stepInfo} />
+      <StatusBar
+        currentAgent={currentAgent}
+        status={status}
+        stepInfo={stepInfo}
+        mode={mode}
+        delegateAgent={delegateAgent}
+        isBusy={isBusy}
+      />
       <Box paddingLeft={1}>
-        <Text dimColor>Q quit   Ctrl+C force quit</Text>
+        <Text dimColor>{isBusy ? "Q quit   Ctrl+C force quit" : "Enter new task   Ctrl+C quit"}</Text>
       </Box>
     </Box>
   );
