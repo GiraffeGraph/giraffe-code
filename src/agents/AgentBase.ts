@@ -6,8 +6,8 @@ import {
   type ChildProcess,
 } from "child_process";
 import { getConfig } from "../config/loader.js";
-import { extractHandoff } from "../core/HandoffParser.js";
-import { eventBus } from "../core/eventBus.js";
+import { extractHandoff } from "../core/handoff/HandoffParser.js";
+import { eventBus } from "../core/runtime/eventBus.js";
 
 function ensureAgentCommandExists(command: string): void {
   try {

@@ -260,39 +260,26 @@ Giraffe parses this block and forwards the context to the next agent automatical
 
 ## Architecture
 
-```
+```text
 src/
+├── agents/                   # Worker CLI adapters / transport wrappers
+├── auth/                     # OAuth, token refresh, auth storage
+├── config/                   # Static + user config loading
 ├── core/
-│   ├── GiraffeGraph.ts       # Root LangGraph StateGraph
-│   ├── BabyGiraffeGraph.ts   # Sub-orchestrator subgraph (Phase 4)
-│   ├── HandoffParser.ts      # Parses [GIRAFFE_HANDOFF] blocks
-│   ├── giraffeReply.ts       # Direct Giraffe replies + final summaries
-│   ├── runModes.ts           # Chat/delegate/resume helpers
-│   ├── workspaceRuntime.ts   # Project-local .giraffe sessions + handoffs
-│   ├── eventBus.ts           # Typed EventEmitter3 for TUI↔graph comms
-│   ├── state.ts              # LangGraph Annotation state definition
-│   └── nodes/
-│       ├── planner.ts        # LLM call → task plan
-│       ├── router.ts         # Decides next agent
-│       └── handoff.ts        # Parses output, prepares next context
-├── agents/
-│   ├── AgentBase.ts          # Abstract PTY wrapper
-│   ├── ClaudeCodeAgent.ts
-│   ├── CodexAgent.ts
-│   ├── PiAgent.ts
-│   └── GeminiAgent.ts
+│   ├── handoff/              # Handoff parsing / normalization helpers
+│   ├── orchestration/        # Graph, state, planner/router/handoff nodes
+│   └── runtime/              # Sessions, native/headless execution, event bus
+├── doctor/                   # Health checks and diagnostics
+├── providers/                # Planner/reply model provider adapters
 ├── tui/
-│   ├── App.tsx               # Root Ink component
-│   ├── AgentPanel.tsx        # Live PTY output (right panel)
-│   ├── TaskTree.tsx          # Task plan with status icons (left panel)
-│   ├── StatusBar.tsx         # Bottom status bar
-│   └── InputBox.tsx          # Interactive mode input
-├── config/
-│   └── loader.ts             # YAML config loader + validation
-├── types/
-│   └── config.ts             # Zod schemas and TypeScript types
+│   ├── components/           # Reusable Ink UI building blocks
+│   ├── controllers/          # TUI state, run actions, commands, hooks
+│   └── screens/              # Screen-level Ink views
+├── types/                    # Shared zod schemas and TS types
 └── index.ts                  # CLI entry point
 ```
+
+For a more detailed architectural rationale and evolution plan, see `docs/architecture.md`.
 
 ---
 

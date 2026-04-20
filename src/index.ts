@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 import React from "react";
 import { render } from "ink";
-import { App } from "./tui/App.js";
-import { LoginSelector } from "./tui/LoginSelector.js";
-import { ModelSelector } from "./tui/ModelSelector.js";
-import { StatusScreen } from "./tui/StatusScreen.js";
-import { LogoutSelector } from "./tui/LogoutSelector.js";
-import { DoctorScreen } from "./tui/DoctorScreen.js";
-import { NativeLauncher } from "./tui/NativeLauncher.js";
-import { runNativeAgentSession } from "./core/nativeMode.js";
+import { App } from "./tui/screens/App.js";
+import { LoginSelector } from "./tui/screens/LoginSelector.js";
+import { ModelSelector } from "./tui/screens/ModelSelector.js";
+import { StatusScreen } from "./tui/screens/StatusScreen.js";
+import { LogoutSelector } from "./tui/screens/LogoutSelector.js";
+import { DoctorScreen } from "./tui/screens/DoctorScreen.js";
+import { NativeLauncher } from "./tui/screens/NativeLauncher.js";
+import { runNativeAgentSession } from "./core/runtime/nativeMode.js";
 import { buildSelfImproveTask } from "./core/improvePrompt.js";
-import { runHeadlessTask } from "./core/headlessRunner.js";
-import { runChatReply, runResumeTask } from "./core/runModes.js";
+import { runHeadlessTask } from "./core/runtime/headlessRunner.js";
+import { runChatReply, runResumeTask } from "./core/runtime/runModes.js";
 import {
   listRecentWorkspaceSessions,
   renderLatestWorkspaceHandoff,
-} from "./core/workspaceRuntime.js";
+} from "./core/runtime/workspaceRuntime.js";
 import { getConfig, setConfigPath } from "./config/loader.js";
 import { hasAnyCredential, removeCredential } from "./auth/storage.js";
 
